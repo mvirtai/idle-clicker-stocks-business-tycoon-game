@@ -22,7 +22,7 @@ Korkeiden panosten (High-Stakes) talous-, urakointi- ja pörssisimulaattori, jok
 
 ### 1. Asenna riippuvuudet
 ```bash
-npm install
+pnpm install
 ```
 
 ### 2. Ympäristömuuttujat ja tietoturva (Valinnainen Google Slides -vienti)
@@ -33,6 +33,6 @@ Sovellus toimii täysin ilman ulkoisia API-avaimia. Jos haluat käyttää *Luo G
 
 ### 3. Käynnistä kehityspalvelin
 ```bash
-npm run dev
+pnpm run dev
 ```
 Sovellus käynnistyy osoitteeseen `http://localhost:3000`.
