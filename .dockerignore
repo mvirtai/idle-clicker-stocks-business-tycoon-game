@@ -1,0 +1,27 @@
+# Git & CI metadata
+.git
+.github
+.gitignore
+
+# Secrets & local environment files (CRITICAL: Never bake secrets into Docker layers!)
+.env
+.env.*
+firebase-applet-config.json
+firebase_applet_config.xml
+*.local
+
+# Dependencies & build artifacts (rebuilt cleanly inside isolated multi-stage containers)
+node_modules
+dist
+dist-ssr
+.aistudio
+backend/bin
+backend/tmp
+frontend/ClickerGame.Client/bin
+frontend/ClickerGame.Client/obj
+
+# Documentation & IDE files
+*.md
+.vscode
+.idea
+*.log
