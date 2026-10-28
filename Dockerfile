@@ -3,7 +3,10 @@
 # ==============================================================================
 # STAGE 1: Go Engine Builder (Deterministinen simulaatiomoottori)
 # ==============================================================================
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.27-alpine AS go-builder
+
+# go.mod vaatii korjatun patch-version; GOTOOLCHAIN=auto hakee sen tarvittaessa
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /src/backend
 
@@ -21,29 +24,52 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ==============================================================================
 # STAGE 2: Frontend & Node Builder (React 19.2+ & React Compiler)
 # ==============================================================================
-FROM node:22-alpine AS web-builder
+FROM node:24-alpine AS web-builder
 
 WORKDIR /app
 
-# Asennetaan riippuvuudet deterministisesti npm ci -komennolla ja BuildKit-välimuistilla
-COPY package.json package-lock.json* ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+RUN apk upgrade --no-cache && \
+    npm install -g pnpm@12.15.0 && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
+# Asennetaan riippuvuudet deterministisesti pnpm-lukkotiedostosta ja BuildKit-välimuistilla
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
 # Kopioidaan lähdekoodi ja ajetaan TypeScript-tyyppitarkistus + Vite-tuotantokäännös
 COPY index.html tsconfig.json vite.config.ts server.ts metadata.json ./
 COPY public/ ./public/
 COPY src/ ./src/
-RUN npm run build
+RUN pnpm run build
 
-# Siivotaan kehitysriippuvuudet, mutta jätetään tsx tuotantopalvelimen ajoa varten
-RUN --mount=type=cache,target=/root/.npm \
-    npm prune --omit=dev && npm install --no-save tsx
+# ==============================================================================
+# STAGE 2b: Vain tuotantoriippuvuudet (ei typescript/vite/esbuild-kehitystyökaluja)
+# ==============================================================================
+FROM node:24-alpine AS prod-deps
+
+WORKDIR /app
+
+RUN apk upgrade --no-cache && \
+    npm install -g pnpm@12.15.0 && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --prod --frozen-lockfile
 
 # ==============================================================================
 # STAGE 3: Hardened Production Runtime (Vähimmäisoikeudet / Non-Root)
 # ==============================================================================
-FROM node:22-alpine AS runtime
+FROM node:24-alpine AS runtime
+
+# Haavoittuvuuksien minimointi: päivitetään Alpine-paketit ja poistetaan paketinhallinnat,
+# joita ajoympäristö ei tarvitse (tsx ajetaan suoraan node_modulesta)
+RUN apk upgrade --no-cache && \
+    rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx \
+           /usr/local/bin/corepack /opt/yarn-*
 
 WORKDIR /app
 
@@ -53,7 +79,7 @@ ENV NODE_ENV=production \
 # Kopioidaan Go-moottorin binääri sekä käännetty web-sovellus
 COPY --from=go-builder --chown=node:node /out/go-engine /usr/local/bin/go-engine
 COPY --from=web-builder --chown=node:node /app/package.json ./package.json
-COPY --from=web-builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=web-builder --chown=node:node /app/dist ./dist
 COPY --from=web-builder --chown=node:node /app/server.ts ./server.ts
 

@@ -74,14 +74,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: '24'
+          cache: 'pnpm'
 
-      - name: Install dependencies (Clean Install)
-        run: npm ci
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
 
       - name: Secret leak guard (Ensure no hardcoded Google API keys in source)
         run: |
@@ -91,13 +94,13 @@ jobs:
           fi
 
       - name: TypeScript & React Compiler verification (Lint)
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Run Frontend & Store unit tests
-        run: npm test
+        run: pnpm run test
 
       - name: Build production bundle
-        run: npm run build
+        run: pnpm run build
 
   # ============================================================================
   # 3. DOCKER BUILDX & GHCR: Monivaiheinen kontitus, GHA-välimuisti & Julkaisu

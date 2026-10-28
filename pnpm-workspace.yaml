@@ -1,0 +1,8 @@
+allowBuilds:
+  '@firebase/util': false
+  esbuild: false
+  protobufjs: false
+
+# Force patched grpc-js (CVE-2026-101916) pulled in transitively by firebase
+overrides:
+  '@grpc/grpc-js': '>=1.14.5'
