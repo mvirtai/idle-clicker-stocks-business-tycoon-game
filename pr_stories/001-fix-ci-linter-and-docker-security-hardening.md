@@ -45,7 +45,7 @@ flowchart TD
 ### 1. Backend API & Go Toolchain
 
 - **Error Check Compliance (`errcheck`)**: Resolved unhandled `(*json.Encoder).Encode` error return values across handlers by introducing a centralized `writeJSON(w http.ResponseWriter, v interface{})` helper in `backend/internal/api/handlers.go`.
-- **Go Toolchain Bump**: Updated `backend/go.mod` to Go 1.27.3 and Dockerfile builder to `golang:1.27-alpine` with `GOTOOLCHAIN=auto`, eliminating upstream Go standard library CVEs (`net/http`, `crypto/tls`, `encoding/asn1`, `golang.org/x/text`).
+- **Go Toolchain & Compatibility**: Maintained `backend/go.mod` at Go language version 1.24 for seamless CI compatibility with `golangci-lint` (compiled on Go 1.24), while using `golang:1.27-alpine` in the Dockerfile build pipeline to compile binaries against the latest vulnerability-free Go standard library (`net/http`, `crypto/tls`, `encoding/asn1`, `golang.org/x/text`).
 
 ### 2. Frontend Package Management & Tooling
 
