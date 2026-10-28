@@ -1,0 +1,236 @@
+@namespace ClickerGame.Client.Components
+@using ClickerGame.Client.Models
+@inject IJSRuntime JS
+
+<div class="luminous-panel p-6 flex flex-col gap-6 text-slate-100 relative">
+    
+    <!-- Työpisteen otsikko & tila -->
+    <div class="flex items-center justify-between border-b border-white/10 pb-4">
+        <div class="flex items-center gap-3">
+            <span class="text-2xl">⚡</span>
+            <div>
+                <h2 class="text-lg font-heading font-black text-white tracking-wide uppercase">
+                    SÄHKÖ- JA AUTOMAATIOTYÖPISTE
+                </h2>
+                <p class="text-xs font-mono text-cyan-400">
+                    Käsityö, kytkennät ja komponenttihuolto
+                </p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 font-mono text-xs">
+            <span class="px-2.5 py-1 rounded bg-cyan-950/60 border border-cyan-500/30 text-cyan-300">
+                Palkkio: <strong class="text-white">+@GetEffectiveClickEarnings().ToString("F2") €</strong> / kytkentä
+            </span>
+            <span class="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                Klikit: <strong class="text-amber-400">@Player.TotalClicks</strong>
+            </span>
+        </div>
+    </div>
+
+    <!-- Työpöydän pääalue: Keskuskytkin ja mittarit -->
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+        
+        <!-- Vasen: Työtahti ja teho -->
+        <div class="md:col-span-4 bg-slate-950/60 rounded-xl p-4 border border-white/10 space-y-4">
+            <div class="text-xs font-mono text-slate-400 uppercase font-bold tracking-wider">
+                TYÖTAHTI & MITTAUKSET
+            </div>
+
+            <!-- Työtehon kertymäpalkki -->
+            <div class="space-y-1.5">
+                <div class="flex justify-between text-xs font-mono">
+                    <span class="text-slate-300">Työvire / Lataus</span>
+                    <span class="text-cyan-400 font-bold">@Math.Round(surgeCharge, 0)%</span>
+                </div>
+                <div class="h-3 w-full bg-slate-900 rounded-full overflow-hidden border border-white/10">
+                    <div class="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-150"
+                         style="width: @(surgeCharge)%"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono pt-2">
+                <div class="p-2 rounded bg-slate-900 border border-slate-800">
+                    <span class="text-[10px] text-slate-400 block">Stamina-kulu:</span>
+                    <span class="text-rose-400 font-bold">-0.2 ST / klik</span>
+                </div>
+                <div class="p-2 rounded bg-slate-900 border border-slate-800">
+                    <span class="text-[10px] text-slate-400 block">Kertymä / sek:</span>
+                    <span class="text-emerald-400 font-bold">+@Player.PassiveIncomePerSec.ToString("F1") €/s</span>
+                </div>
+            </div>
+
+            @if (isOverdrive)
+            {
+                <div class="p-2.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-mono text-center font-bold animate-pulse">
+                    ⚡ VIRRAT TAPISSA (2x tuotto päällä!)
+                </div>
+            }
+        </div>
+
+        <!-- Keskus: Selkeä, suuri kytkentäpainike -->
+        <div class="md:col-span-8 flex flex-col items-center justify-center p-6 bg-slate-950/40 rounded-2xl border border-white/10 relative min-h-[260px]">
+            
+            <!-- Leijuvat numerot -->
+            @foreach (var p in particles)
+            {
+                <div class="floating-number"
+                     style="left: @(p.X)%; top: @(p.Y)%; color: @p.Color;">
+                    @p.Text
+                </div>
+            }
+
+            <button class="clicker-btn-core group relative focus:outline-none transition-transform active:scale-95"
+                    @onclick="HandleWorkClick">
+                <!-- Outer Ring -->
+                <div class="w-40 h-40 rounded-full border-4 border-cyan-500/40 bg-gradient-to-b from-slate-800 to-slate-950 shadow-[0_0_30px_rgba(6,182,212,0.25)] flex flex-col items-center justify-center group-hover:border-cyan-400 transition-colors">
+                    <span class="text-5xl filter drop-shadow">⚡</span>
+                    <span class="text-xs font-heading font-black tracking-wider uppercase text-white mt-1">
+                        KYTKE PIIRI
+                    </span>
+                    <span class="text-[11px] font-mono text-cyan-300 font-bold mt-0.5">
+                        +@GetEffectiveClickEarnings().ToString("F2") €
+                    </span>
+                </div>
+            </button>
+
+            <p class="text-xs font-mono text-slate-400 mt-4 text-center">
+                Klikkaa suorittaaksesi asennustyötä ja kerryttääksesi pääomaa
+            </p>
+        </div>
+
+    </div>
+</div>
+
+<style>
+.floating-number {
+    position: absolute;
+    font-family: var(--font-mono);
+    font-weight: 800;
+    font-size: 1rem;
+    pointer-events: none;
+    animation: floatUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    z-index: 50;
+}
+
+@@keyframes floatUp {
+    0% {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(0.9);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -45px) scale(1.15);
+    }
+}
+</style>
+
+@code {
+    [Parameter, EditorRequired] public PlayerState Player { get; set; } = default!;
+    [Parameter] public List<UpgradeItem>? Upgrades { get; set; }
+    [Parameter] public EventCallback<double> OnAddCash { get; set; }
+    [Parameter] public EventCallback<int> OnAddXp { get; set; }
+    [Parameter] public EventCallback<int> OnAddRep { get; set; }
+    [Parameter] public EventCallback<float> OnConsumeStamina { get; set; }
+    [Parameter] public EventCallback<string> OnLaunchMinigame { get; set; }
+    [Parameter] public EventCallback OnRestToday { get; set; }
+
+    private float surgeCharge = 10f;
+    private bool isOverdrive = false;
+    private System.Threading.Timer? decayTimer;
+
+    private class Particle
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Text { get; set; } = "";
+        public double X { get; set; }
+        public double Y { get; set; }
+        public string Color { get; set; } = "#38bdf8";
+    }
+
+    private List<Particle> particles = new();
+
+    protected override void OnInitialized()
+    {
+        decayTimer = new System.Threading.Timer(_ =>
+        {
+            if (!isOverdrive && surgeCharge > 0)
+            {
+                surgeCharge = Math.Max(0, surgeCharge - 1.0f);
+                InvokeAsync(StateHasChanged);
+            }
+        }, null, 1000, 500);
+    }
+
+    private double GetEffectiveClickEarnings()
+    {
+        double baseVal = Player.BaseClickValue > 0 ? Player.BaseClickValue : 6.0;
+        
+        if (Upgrades != null)
+        {
+            foreach (var up in Upgrades.Where(u => u.Level > 0))
+            {
+                baseVal += up.ClickBonus * up.Level;
+            }
+        }
+
+        if (isOverdrive)
+        {
+            baseVal *= 2.0;
+        }
+
+        return baseVal;
+    }
+
+    private async Task HandleWorkClick()
+    {
+        if (Player.Stamina <= 1)
+        {
+            try { await JS.InvokeVoidAsync("GameAudio.playWarning"); } catch { }
+            return;
+        }
+
+        double earned = GetEffectiveClickEarnings();
+
+        // Stamina cost
+        await OnConsumeStamina.InvokeAsync(0.2f);
+        await OnAddCash.InvokeAsync(earned);
+        await OnAddXp.InvokeAsync(1);
+
+        surgeCharge = Math.Min(100f, surgeCharge + 4.5f);
+        if (surgeCharge >= 100f && !isOverdrive)
+        {
+            isOverdrive = true;
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(6000);
+                isOverdrive = false;
+                surgeCharge = 20f;
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+
+        // Particle effect
+        var p = new Particle
+        {
+            Text = $"+{earned:F2} €",
+            X = 50 + (Random.Shared.NextDouble() * 20 - 10),
+            Y = 50 + (Random.Shared.NextDouble() * 15 - 8),
+            Color = isOverdrive ? "#fbbf24" : "#38bdf8"
+        };
+        particles.Add(p);
+
+        try { await JS.InvokeVoidAsync("GameAudio.playClick"); } catch { }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(800);
+            particles.Remove(p);
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    public void Dispose()
+    {
+        decayTimer?.Dispose();
+    }
+}

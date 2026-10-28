@@ -1,0 +1,1048 @@
+@page "/"
+@using ClickerGame.Client.Models
+@using ClickerGame.Client.Components
+@using ClickerGame.Client.Pages.Minigame
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>From Gigs to Giants</PageTitle>
+
+@if (activeMinigameGig != null)
+{
+    <!-- Full-screen Minigame Mode based on Gig MinigameType -->
+    @if (activeMinigameGig.MinigameType == "wiring")
+    {
+        <WiringGame CurrentGig="activeMinigameGig"
+                    PlayerStamina="state.Player.Stamina"
+                    OnComplete="HandleMinigameCompleted"
+                    OnCancel="CancelMinigame" />
+    }
+    else if (activeMinigameGig.MinigameType == "troubleshooting")
+    {
+        <TroubleshootingGame CurrentGig="activeMinigameGig"
+                             PlayerStamina="state.Player.Stamina"
+                             OnComplete="HandleMinigameCompleted"
+                             OnCancel="CancelMinigame" />
+    }
+    else
+    {
+        <TimingGame CurrentGig="activeMinigameGig"
+                    PlayerStamina="state.Player.Stamina"
+                    OnComplete="HandleMinigameCompleted"
+                    OnCancel="CancelMinigame" />
+    }
+}
+else
+{
+    <div class="min-h-screen @GetContainerThemeClass() flex flex-col font-body selection:bg-cyan-500 selection:text-black transition-colors duration-700">
+        
+        <!-- 1. Header Stats Bar (Integrated luminous control bezel) -->
+        <StatsBar Player="state.Player" Company="state.Company" OnThemeModeChanged="HandleThemeModeChanged" />
+
+        <!-- Notification Banner if any -->
+        @if (!string.IsNullOrEmpty(statusMessage))
+        {
+            <div class="px-5 py-2 flex items-center justify-between text-xs font-mono font-bold tracking-wide border-b @statusBannerClass transition-all">
+                <div class="flex items-center gap-2">
+                    <span>⚡</span>
+                    <span>@statusMessage</span>
+                </div>
+                <button class="text-slate-400 hover:text-white p-1" @onclick="() => statusMessage = null">✕</button>
+            </div>
+        }
+
+        <!-- Top Navigation / View Switcher (Clean, focused tab navigation) -->
+        <div class="px-4 py-2 bg-slate-900/95 border-b border-cyan-500/20 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs font-mono sticky top-0 z-40 shadow-md">
+            <div class="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-white/10">
+                <button class="px-3.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 @(activeViewTab == "workstation" ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30 font-black" : "text-slate-300 hover:text-cyan-300 hover:bg-white/5")"
+                        @onclick='() => activeViewTab = "workstation"'>
+                    <span>⚡</span>
+                    <span>TYÖASEMA</span>
+                </button>
+                <button class="px-3.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 @(activeViewTab == "calendar" ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30 font-black" : "text-slate-300 hover:text-amber-300 hover:bg-white/5")"
+                        @onclick='() => activeViewTab = "calendar"'>
+                    <span>📅</span>
+                    <span>KEIKAT & KALENTERI</span>
+                </button>
+                <button class="px-3.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 @(activeViewTab == "upgrades" ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/30 font-black" : "text-slate-300 hover:text-emerald-300 hover:bg-white/5")"
+                        @onclick='() => activeViewTab = "upgrades"'>
+                    <span>🛠️</span>
+                    <span>PAJAPÄIVITYKSET</span>
+                </button>
+                <button class="px-3.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 @(activeViewTab == "company" ? "bg-purple-500 text-white shadow-md shadow-purple-500/30 font-black" : "text-slate-300 hover:text-purple-300 hover:bg-white/5")"
+                        @onclick='() => activeViewTab = "company"'>
+                    <span>🏢</span>
+                    <span>YRITYS & PANKKI</span>
+                </button>
+            </div>
+
+            <!-- Quick Day Advance & Coffee Break -->
+            <div class="flex items-center gap-2">
+                <span class="text-slate-300 hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 text-xs">
+                    <span>🗓️</span>
+                    <strong class="text-cyan-300">@state.Player.DayOfWeek</strong>
+                    <span class="text-slate-500">|</span>
+                    <span class="text-amber-300 font-bold">VK @state.Player.Week</span>
+                </span>
+                <button class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs shadow-sm active:scale-95 flex items-center gap-1.5 transition-all"
+                        @onclick="AdvanceNextDay">
+                    <span>⏭</span>
+                    <span>SEURAAVA PÄIVÄ</span>
+                </button>
+                <button class="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs flex items-center gap-1 transition-all"
+                        title="Nopea kahvitauko (+40 Stamina)"
+                        @onclick="RestToday">
+                    <span>☕</span>
+                    <span class="hidden md:inline">KAHVI</span>
+                </button>
+                <button class="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-700 text-xs"
+                        title="Pikatestit"
+                        @onclick="ToggleDevToggles">
+                    ⚙
+                </button>
+            </div>
+        </div>
+
+        <!-- Dev Controls Drawer -->
+        @if (showDevControls)
+        {
+            <div class="px-4 py-2 bg-slate-900/95 border-b border-amber-500/30 flex flex-wrap items-center gap-2 text-xs font-mono">
+                <span class="text-amber-400 font-bold">PIKATILAT:</span>
+                <button class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40" @onclick='() => LaunchTestGame("wiring")'>🔌 Johdotus</button>
+                <button class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40" @onclick='() => LaunchTestGame("troubleshooting")'>🔍 Vianetsintä</button>
+                <button class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40" @onclick='() => LaunchTestGame("timing")'>⚡ Vaihetahdistus</button>
+                <button class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700" @onclick="AddCash">+500 €</button>
+                <button class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700" @onclick="() => SetStamina(100)">Täysi Stamina</button>
+                <button class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/40" @onclick="ResetDemoState">Nollaa Peli</button>
+            </div>
+        }
+
+        <!-- Main Focused Workspace: Max 2 components visible at any time -->
+        <main class="flex-1 p-4 lg:p-6 max-w-[1500px] w-full mx-auto">
+            
+            @if (activeViewTab == "workstation")
+            {
+                <!-- VIEW 1: WORKBENCH (Only Workstation + Financial/Stamina Sidebar) - 2 components -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                    <div class="lg:col-span-8">
+                        <ClickerWorkstation Player="state.Player"
+                                            Upgrades="upgrades"
+                                            OnAddCash="HandleAddCash"
+                                            OnAddXp="HandleAddXp"
+                                            OnAddRep="HandleAddRep"
+                                            OnConsumeStamina="HandleConsumeStamina"
+                                            OnLaunchMinigame="LaunchTestGame"
+                                            OnRestToday="RestToday" />
+                    </div>
+                    <div class="lg:col-span-4">
+                        <EarningsSidebar Player="state.Player"
+                                         CurrentLoan="currentLoan"
+                                         Upgrades="upgrades"
+                                         OnRepayLoan="HandleRepayLoan" />
+                    </div>
+                </div>
+            }
+            else if (activeViewTab == "calendar")
+            {
+                <!-- VIEW 2: GIGS & CALENDAR (Calendar + Available Gigs Market) - 2 components -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                    <div class="lg:col-span-7 flex flex-col gap-4">
+                        <WeekCalendar Plan="weekPlan"
+                                      CurrentDay="state.Player.DayOfWeek"
+                                      AvailableGigs="availableGigs"
+                                      SelectedGigToAssign="selectedGigToAssign"
+                                      OnDaySelected="HandleDaySelected"
+                                      OnExecuteDay="ExecuteDay"
+                                      OnAssignGig="HandleAssignGig"
+                                      OnClearSlot="HandleClearSlot"
+                                      OnQuickAction="HandleQuickAction"
+                                      OnCancelAssign="() => selectedGigToAssign = null" />
+
+                        <!-- Simple Action Bar -->
+                        <div class="luminous-panel p-3.5 flex items-center justify-between gap-3 text-xs">
+                            <span class="text-slate-400 font-mono">Valitse keikka oikealta ja sijoita se kalenterin vapaalle päivälle.</span>
+                            <div class="flex items-center gap-2">
+                                <button class="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold transition-all"
+                                        @onclick="() => ExecuteDay(state.Player.DayOfWeek)">
+                                    ⚡ Suorita päivä (@state.Player.DayOfWeek)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-5">
+                        <GigMarket Gigs="availableGigs"
+                                   Player="state.Player"
+                                   SelectedGig="selectedGigToAssign"
+                                   OnSelectGig="HandleSelectGigFromMarket" />
+                    </div>
+                </div>
+            }
+            else if (activeViewTab == "upgrades")
+            {
+                <!-- VIEW 3: WORKSHOP UPGRADES (Focused view on tooling & automation) - 1 main component -->
+                <div class="w-full">
+                    <UpgradesBottomPanel Upgrades="upgrades"
+                                         PlayerCash="state.Player.Cash"
+                                         OnPurchaseUpgrade="HandlePurchaseUpgrade" />
+                </div>
+            }
+            else if (activeViewTab == "company")
+            {
+                <!-- VIEW 4: COMPANY & BANK LOAN - 2 components: Company Status + Financial Sidebar -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                    <div class="lg:col-span-8 flex flex-col gap-4">
+                        <div class="luminous-panel luminous-panel-purple p-5 flex flex-col gap-4">
+                            <div class="flex items-center justify-between border-b border-purple-500/20 pb-3">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-2xl">🏢</span>
+                                    <div>
+                                        <h3 class="text-lg font-heading font-bold text-white">YRITYKSEN PÄÄMAJA & LIIKETOIMINTA</h3>
+                                        <p class="text-xs font-mono text-purple-300">Siirtymä keikkatyöläisestä teollisuusautomaation suuryritykseksi</p>
+                                    </div>
+                                </div>
+                                <span class="px-2.5 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-mono font-bold">
+                                    @(state.Company != null ? state.Company.Name : "Tmi Sähkö & Automaatio (Perustettu)")
+                                </span>
+                            </div>
+
+                            <!-- Narrative Callout: The Bank Loan Pressure -->
+                            <div class="p-4 rounded-xl bg-gradient-to-r from-rose-950/40 to-slate-900 border border-rose-500/40 text-xs text-slate-300 space-y-2">
+                                <div class="font-heading font-bold text-sm text-rose-300 flex items-center gap-2">
+                                    <span>⚠️</span>
+                                    <span>PANKKILAINA & KODIN KIINNITYS</span>
+                                </div>
+                                <p class="leading-relaxed">
+                                    Liiketoiminnan ostaminen vaati 45 000 € pankkilainan, jonka vakuudeksi asetettiin perheen koti (arvo 180 000 €). 
+                                    Jokainen työntekijä lisää kiinteitä palkkakustannuksia. Keikkojen viivästykset tai virheet kasvattavat konkurssin ja kodin menetyksen uhkaa.
+                                </p>
+                                <div class="flex items-center gap-4 text-mono font-bold text-xs pt-1">
+                                    <span class="text-slate-400">Jäljellä oleva velka: <strong class="text-rose-400">@currentLoan.Principal.ToString("N0", new System.Globalization.CultureInfo("fi-FI")) €</strong></span>
+                                    <span>•</span>
+                                    <span class="text-slate-400">Kodin panttiaste: <strong class="text-amber-400">@Math.Round(currentLoan.CollateralRiskPercent, 1)%</strong></span>
+                                </div>
+                            </div>
+
+                            <!-- Staff & Crew List -->
+                            <div class="bg-slate-950/80 rounded-xl p-4 border border-slate-800 space-y-3">
+                                <div class="flex items-center justify-between text-xs font-mono">
+                                    <span class="text-slate-300 font-bold uppercase tracking-wider">PALKATTU HENKILÖSTÖ (@employees.Count kpl)</span>
+                                    <span class="text-slate-400">Viikkopalkat yhteensä: <strong class="text-rose-400">-@(employees.Sum(e => e.WeeklyCostEur)) €/vk</strong></span>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    @foreach (var emp in employees)
+                                    {
+                                        <div class="p-3 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+                                            <div>
+                                                <div class="font-heading font-bold text-white text-sm">@emp.Name</div>
+                                                <div class="text-[11px] font-mono text-slate-400">Taitotaso: @emp.SkillLevel / 5 • Automaatio</div>
+                                            </div>
+                                            <div class="text-right font-mono text-xs">
+                                                <div class="text-emerald-400 font-bold">+@(emp.SkillLevel * 30) €/pv tuotto</div>
+                                                <div class="text-rose-400 text-[10px]">-@emp.WeeklyCostEur € / vk palkka</div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-4">
+                        <EarningsSidebar Player="state.Player"
+                                         CurrentLoan="currentLoan"
+                                         Upgrades="upgrades"
+                                         OnRepayLoan="HandleRepayLoan" />
+                    </div>
+                </div>
+            }
+
+        </main>
+    </div>
+}
+
+@code {
+    private GameState state = default!;
+    private WeekPlan weekPlan = default!;
+    private List<Gig> availableGigs = new();
+    private Gig? selectedGigToAssign;
+    private Gig? activeMinigameGig;
+
+    private string? statusMessage;
+    private string statusBannerClass = "bg-emerald-950/80 text-emerald-300 border-emerald-500/40";
+    private bool showDevControls = false;
+    private string activeViewTab = "workstation"; // "workstation" | "calendar" | "company"
+
+    private LoanState currentLoan = new LoanState();
+    private List<UpgradeItem> upgrades = new();
+    private List<Employee> employees = new();
+
+    private System.Threading.Timer? passiveIncomeTimer;
+    private readonly string[] DaysSequence = ["MA", "TI", "KE", "TO", "PE", "LA", "SU"];
+
+    protected override void OnInitialized()
+    {
+        InitializeGame();
+
+        // Passive Income Engine & In-game Day/Night Progression: runs every 1000ms
+        passiveIncomeTimer = new System.Threading.Timer(_ =>
+        {
+            InvokeAsync(async () =>
+            {
+                double passiveRate = CalculateTotalPassiveRate();
+                double added = passiveRate;
+                double newCash = state.Player.Cash + added;
+                double newLife = state.Player.LifetimeCash + added;
+
+                int newMinute = state.Player.CurrentMinute + 2;
+                int newHour = state.Player.CurrentHour;
+                if (newMinute >= 60)
+                {
+                    newHour = (newHour + (newMinute / 60)) % 24;
+                    newMinute %= 60;
+                }
+
+                state = state with
+                {
+                    Player = state.Player with
+                    {
+                        Cash = newCash,
+                        LifetimeCash = newLife,
+                        CurrentHour = newHour,
+                        CurrentMinute = newMinute
+                    }
+                };
+
+                try
+                {
+                    await JS.InvokeVoidAsync("ThemeManager.setTimeOfDay", newHour, newMinute);
+                    var activeTheme = await JS.InvokeAsync<string>("ThemeManager.getTheme");
+                    if (activeTheme != currentTheme)
+                    {
+                        currentTheme = activeTheme;
+                    }
+                }
+                catch { }
+
+                StateHasChanged();
+            });
+        }, null, 1000, 1000);
+    }
+
+    private void InitializeGame()
+    {
+        var player = new PlayerState(
+            Week: 1,
+            DayOfWeek: "TI",
+            Stamina: 82.5f,
+            Cash: 420.00,
+            PersonalRep: 35,
+            Level: 1,
+            Xp: 65,
+            Certifications: new List<string> { "electrical_safety_1" },
+            Connections: new List<Connection>
+            {
+                new Connection("peltipaja", 3, 91.2f, "2026-09-18", 1),
+                new Connection("paikallisputki", 1, 88.0f, "2026-09-19", 1)
+            },
+            LifetimeCash: 420.00,
+            TotalClicks: 0,
+            BaseClickValue: 6.0,
+            PassiveIncomePerSec: 1.5
+        );
+
+        employees = new List<Employee>
+        {
+            new Employee("emp-1", "Matti Virtanen (Sähköasentaja)", 2, 380.0),
+            new Employee("emp-2", "Eveliina Korhonen (Automaatioharjoittelija)", 1, 240.0)
+        };
+
+        var company = new CompanyState("Virtanen & Kumppanit Oy", 45, employees, 2);
+        currentLoan = new LoanState(Principal: 45000.0, WeeklyInterestRate: 0.018, WeeklyPayment: 450.0);
+
+        // Catalog of rich, colorful upgrades
+        upgrades = new List<UpgradeItem>
+        {
+            new UpgradeItem(
+                "tools-1",
+                "Knipex ErgoStrip & Kuorintapihdit",
+                "tools",
+                "✂️",
+                "Korkealaatuiset automaatiokuorintapihdit nopeuttavat johdotustyötä merkittävästi.",
+                "Tarkat kuorinnat ilman johtimen vahingoittumista.",
+                BaseCost: 75.0,
+                Level: 1,
+                MaxLevel: 5,
+                ClickBonus: 2.5,
+                PassiveIncomeBonus: 0,
+                StaminaDrainReduction: 0.05f,
+                RepBonus: 2,
+                Unlocked: true
+            ),
+            new UpgradeItem(
+                "tools-2",
+                "Fluke 87V True-RMS Yleismittari",
+                "tools",
+                "📟",
+                "Teollisuusstandardin yleismittari säröisten signaalien ja taajuuksien mittaukseen.",
+                "Ehdottoman luotettava työkalu kenttäolosuhteissa.",
+                BaseCost: 280.0,
+                Level: 0,
+                MaxLevel: 5,
+                ClickBonus: 6.0,
+                PassiveIncomeBonus: 0,
+                StaminaDrainReduction: 0.08f,
+                RepBonus: 5
+            ),
+            new UpgradeItem(
+                "tools-3",
+                "FLIR E8-XT Infrapuna-lämpökamera",
+                "tools",
+                "🔥",
+                "Paljastaa ylikuumenevat kontaktorit ja huonot liitokset sekunneissa.",
+                "Asiakkaat maksavat mielellään lämpökuvausraporteista.",
+                BaseCost: 950.0,
+                Level: 0,
+                MaxLevel: 4,
+                ClickBonus: 16.0,
+                PassiveIncomeBonus: 3.5,
+                StaminaDrainReduction: 0.12f,
+                RepBonus: 12
+            ),
+            new UpgradeItem(
+                "tools-4",
+                "Fluke ScopeMeter 190 Oskilloskooppi",
+                "tools",
+                "⚡",
+                "Kannettava nelikanavainen oskilloskooppi taajuusmuuttajien häiriödiagnostiikkaan.",
+                "Mahdollistaa vaativimpien teollisuusvikojen ratkaisun.",
+                BaseCost: 2200.0,
+                Level: 0,
+                MaxLevel: 3,
+                ClickBonus: 35.0,
+                PassiveIncomeBonus: 8.0,
+                StaminaDrainReduction: 0.15f,
+                RepBonus: 25
+            ),
+            new UpgradeItem(
+                "certs-1",
+                "SFS 6002 Sähkötyöturvallisuus",
+                "certs",
+                "📜",
+                "Lakisääteinen sähkötyöturvallisuuskortti. Vähentää tapaturmariskiä ja staminahukkaa.",
+                "Ilman tätä et pääse teollisuuskohteisiin.",
+                BaseCost: 180.0,
+                Level: 1,
+                MaxLevel: 1,
+                ClickBonus: 1.0,
+                PassiveIncomeBonus: 0,
+                StaminaDrainReduction: 0.15f,
+                RepBonus: 10,
+                Unlocked: true
+            ),
+            new UpgradeItem(
+                "certs-2",
+                "PLC-Automaation Perusteet & Siemens TIA",
+                "certs",
+                "💻",
+                "Ohjelmoitavien logiikoiden peruskoulutus. Avaa Tier 2 & 3 teollisuustyöt.",
+                "Siirtymä ruuvinvääntimestä logiikkakoodaukseen.",
+                BaseCost: 650.0,
+                Level: 0,
+                MaxLevel: 3,
+                ClickBonus: 8.0,
+                PassiveIncomeBonus: 6.5,
+                StaminaDrainReduction: 0.10f,
+                RepBonus: 20
+            ),
+            new UpgradeItem(
+                "certs-3",
+                "KNX & Rakennusautomaatio",
+                "certs",
+                "🏛️",
+                "Älykkäiden kiinteistöjen väyläjärjestelmät ja energiansäästöohjaukset.",
+                "Tuottaa tasaista kuukausittaista huoltosopimustuloa.",
+                BaseCost: 1400.0,
+                Level: 0,
+                MaxLevel: 3,
+                ClickBonus: 12.0,
+                PassiveIncomeBonus: 15.0,
+                StaminaDrainReduction: 0.08f,
+                RepBonus: 30
+            ),
+            new UpgradeItem(
+                "equip-1",
+                "Oma Huoltoauto (VW Transporter T6)",
+                "equipment",
+                "🚐",
+                "Varusteltu hyllyköillä, invertterillä ja kattavalla varaosavarastolla.",
+                "Ei enää kaluston raahaamista omalla henkilöautolla.",
+                BaseCost: 1900.0,
+                Level: 0,
+                MaxLevel: 3,
+                ClickBonus: 5.0,
+                PassiveIncomeBonus: 12.5,
+                StaminaDrainReduction: 0.20f,
+                RepBonus: 15
+            ),
+            new UpgradeItem(
+                "equip-2",
+                "Automaatio- & Koestuspenkki",
+                "equipment",
+                "🎛️",
+                "Verstaan kiinteä testipenkki keskusten ennakkokoestukseen ennen asennusta.",
+                "Virheet löytyvät hallilla, ei asiakkaan seisokissa.",
+                BaseCost: 3400.0,
+                Level: 0,
+                MaxLevel: 3,
+                ClickBonus: 18.0,
+                PassiveIncomeBonus: 24.0,
+                StaminaDrainReduction: 0.10f,
+                RepBonus: 25
+            ),
+            new UpgradeItem(
+                "equip-3",
+                "Pilvipohjainen Työnohjaus ERP",
+                "equipment",
+                "🌐",
+                "Automaattinen keikkojen reititys, varastonhallinta ja laskutus.",
+                "Laskut lähtevät suoraan työn valmistuttua.",
+                BaseCost: 6200.0,
+                Level: 0,
+                MaxLevel: 3,
+                ClickBonus: 25.0,
+                PassiveIncomeBonus: 48.0,
+                StaminaDrainReduction: 0.15f,
+                RepBonus: 35
+            ),
+            new UpgradeItem(
+                "comp-1",
+                "Ensimmäinen Oppipoika (Harjoittelija)",
+                "company",
+                "👷",
+                "Palkkaa ensimmäinen työntekijä jakamaan kenttätöiden taakkaa.",
+                "Hän oppii nopeasti, mutta palkka juoksee joka viikko.",
+                BaseCost: 1500.0,
+                Level: 1,
+                MaxLevel: 4,
+                ClickBonus: 4.0,
+                PassiveIncomeBonus: 18.0,
+                StaminaDrainReduction: 0.15f,
+                RepBonus: 15,
+                Unlocked: true
+            ),
+            new UpgradeItem(
+                "comp-2",
+                "Vanhempi Sähköinsinööri",
+                "company",
+                "👨‍💼",
+                "Kokenut suunnittelija ottaa vastuun vaativista teollisuusprojekteista.",
+                "Tuottaa korkean katteen projekteja ilman omaa fyysistä työtä.",
+                BaseCost: 5500.0,
+                Level: 0,
+                MaxLevel: 3,
+                ClickBonus: 0,
+                PassiveIncomeBonus: 65.0,
+                StaminaDrainReduction: 0.25f,
+                RepBonus: 40
+            ),
+            new UpgradeItem(
+                "comp-3",
+                "Pankkilainan Pääoman Lyhennyspaketti",
+                "company",
+                "🏡",
+                "Ylimääräinen lyhennys pankille, joka vapauttaa perheen kotia lainapantista.",
+                "Laskee viikoittaista korkorasitusta ja lievittää painetta.",
+                BaseCost: 2000.0,
+                Level: 0,
+                MaxLevel: 10,
+                ClickBonus: 0,
+                PassiveIncomeBonus: 10.0,
+                StaminaDrainReduction: 0,
+                RepBonus: 20
+            )
+        };
+
+        state = new GameState(player, company, currentLoan, upgrades);
+
+        availableGigs = new List<Gig>
+        {
+            new Gig("gig-1", "club", "Yökerho Bassoclub", 1, 1, 140.0, 280.0, new List<string>(), 0, DateTime.Now.AddDays(2).ToString("o"), "wiring", "Strobovalojen, lasereiden ja DMX-ohjauspöydän kytkentä"),
+            new Gig("gig-2", "coffee", "Kahvila & Bistro Kulttikupla", 1, 1, 120.0, 240.0, new List<string>(), 0, DateTime.Now.AddDays(3).ToString("o"), "troubleshooting", "Italialaisen espressokoneen paineanturi & neonvalokyltti"),
+            new Gig("gig-3", "arcade", "Retro Arcadia Pelihalli", 1, 2, 220.0, 480.0, new List<string>(), 0, DateTime.Now.AddDays(4).ToString("o"), "troubleshooting", "80-luvun flipperien hakkurivirtalähde ja neonputkiston korjaus"),
+            new Gig("gig-4", "skybar", "Kattoterassi Skybar", 2, 2, 450.0, 850.0, new List<string> { "electrical_safety_1" }, 25, DateTime.Now.AddDays(5).ToString("o"), "timing", "Aurinkopaneeleiden ja illan valoshow-akuston vaihetahdistus"),
+            new Gig("gig-5", "hospital", "Keskussairaalan Valoverkko", 3, 3, 1400.0, 3800.0, new List<string> { "electrical_safety_1", "plc_basics" }, 100, DateTime.Now.AddDays(6).ToString("o"), "wiring", "Leikkaussalien häiriöttömän varavoiman ja LED-valomatriisin kytkentä"),
+            new Gig("gig-6", "panimo", "Kaupunkipanimo & Tislaamo", 3, 2, 1100.0, 3200.0, new List<string> { "plc_basics" }, 100, DateTime.Now.AddDays(7).ToString("o"), "timing", "Käymistankkien automaation ja kylmäkompressorien synkronointi")
+        };
+
+        var days = new Dictionary<string, WeekSlot>
+        {
+            ["MA"] = new WeekSlot("gig", "gig-1", null, new MinigameResult(94.5f, "perfect", 60, 5, 135.0)),
+            ["TI"] = new WeekSlot("gig", "gig-1"),
+            ["KE"] = new WeekSlot("empty"),
+            ["TO"] = new WeekSlot("gig", "gig-3"),
+            ["PE"] = new WeekSlot("gig", "gig-3"),
+            ["LA"] = new WeekSlot("rest"),
+            ["SU"] = new WeekSlot("rest")
+        };
+
+        weekPlan = new WeekPlan(days);
+    }
+
+    private double CalculateTotalPassiveRate()
+    {
+        double rate = state.Player.PassiveIncomePerSec;
+        foreach (var u in upgrades.Where(x => x.Level > 0))
+        {
+            rate += u.PassiveIncomeBonus * u.Level;
+        }
+        return rate;
+    }
+
+    // Workstation Click Handlers
+    private void HandleAddCash(double cash)
+    {
+        int newMinute = state.Player.CurrentMinute + 1;
+        int newHour = state.Player.CurrentHour;
+        if (newMinute >= 60)
+        {
+            newHour = (newHour + (newMinute / 60)) % 24;
+            newMinute %= 60;
+        }
+
+        state = state with
+        {
+            Player = state.Player with
+            {
+                Cash = state.Player.Cash + cash,
+                LifetimeCash = state.Player.LifetimeCash + cash,
+                TotalClicks = state.Player.TotalClicks + 1,
+                CurrentHour = newHour,
+                CurrentMinute = newMinute
+            }
+        };
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("ThemeManager.setTimeOfDay", newHour, newMinute);
+            }
+            catch { }
+        });
+    }
+
+    private void HandleAddXp(int xp)
+    {
+        int newXp = state.Player.Xp + xp;
+        int req = state.Player.Level * 200;
+        int lvl = state.Player.Level;
+
+        if (newXp >= req)
+        {
+            lvl++;
+            newXp -= req;
+            ShowStatus($"TASO NOUSI! Olet nyt tasolla {lvl}! Työvoima kasvoi.", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+            try { JS.InvokeVoidAsync("GameAudio.playSuccess"); } catch { }
+        }
+
+        state = state with { Player = state.Player with { Xp = newXp, Level = lvl } };
+    }
+
+    private void HandleAddRep(int rep)
+    {
+        int newRep = Math.Clamp(state.Player.PersonalRep + rep, 0, 200);
+        state = state with { Player = state.Player with { PersonalRep = newRep } };
+    }
+
+    private void HandleConsumeStamina(float st)
+    {
+        float drainRed = 0f;
+        foreach (var u in upgrades.Where(x => x.Level > 0))
+        {
+            drainRed += u.StaminaDrainReduction;
+        }
+        drainRed = Math.Clamp(drainRed, 0f, 0.7f);
+
+        float effectiveDrain = st * (1.0f - drainRed);
+        float newSt = Math.Clamp(state.Player.Stamina - effectiveDrain, 0f, 100f);
+        state = state with { Player = state.Player with { Stamina = newSt } };
+    }
+
+    // Upgrades Purchase Handler
+    private void HandlePurchaseUpgrade(UpgradeItem item)
+    {
+        if (state.Player.Cash >= item.CurrentCost && !item.IsMaxLevel)
+        {
+            double cost = item.CurrentCost;
+            int idx = upgrades.FindIndex(u => u.Id == item.Id);
+            if (idx != -1)
+            {
+                var updated = item with { Level = item.Level + 1, Unlocked = true };
+                upgrades[idx] = updated;
+
+                // If certs, add to player certs
+                if (item.Id == "certs-2" && !state.Player.Certifications.Contains("plc_basics"))
+                {
+                    state.Player.Certifications.Add("plc_basics");
+                }
+
+                // If loan package, pay down 2000 € directly
+                if (item.Id == "comp-3")
+                {
+                    currentLoan = currentLoan with { Principal = Math.Max(0, currentLoan.Principal - 2000.0) };
+                }
+
+                state = state with
+                {
+                    Player = state.Player with
+                    {
+                        Cash = state.Player.Cash - cost,
+                        PersonalRep = Math.Clamp(state.Player.PersonalRep + item.RepBonus, 0, 200)
+                    }
+                };
+
+                ShowStatus($"Parannus '{item.Name}' asennettu! (Taso {updated.Level}/{updated.MaxLevel})", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+            }
+        }
+    }
+
+    // Loan Repayment
+    private void HandleRepayLoan(double amount)
+    {
+        if (state.Player.Cash >= amount && currentLoan.Principal > 0)
+        {
+            double paid = Math.Min(amount, currentLoan.Principal);
+            currentLoan = currentLoan with { Principal = currentLoan.Principal - paid };
+            state = state with
+            {
+                Player = state.Player with
+                {
+                    Cash = state.Player.Cash - paid
+                }
+            };
+            ShowStatus($"Pankkilainaa lyhennetty {paid:N0} €! Kodin panttiriski laski {currentLoan.CollateralRiskPercent:F1} %:iin.", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+        }
+    }
+
+    // Calendar & Gig selection handlers
+    private void HandleSelectGigFromMarket(Gig gig)
+    {
+        if (selectedGigToAssign?.Id == gig.Id)
+        {
+            selectedGigToAssign = null;
+        }
+        else
+        {
+            selectedGigToAssign = gig;
+            ShowStatus($"Valittu: {gig.ClientName} ({gig.DurationDays} pv). Klikkaa kalenterin vapaata päivää.", "bg-amber-950/80 text-amber-300 border-amber-500/40");
+        }
+    }
+
+    private void HandleDaySelected(string dayKey)
+    {
+        if (selectedGigToAssign != null)
+        {
+            HandleAssignGig((dayKey, selectedGigToAssign));
+        }
+    }
+
+    private void HandleAssignGig((string DayKey, Gig Gig) payload)
+    {
+        var (startDay, gig) = payload;
+        int startIndex = Array.IndexOf(DaysSequence, startDay);
+        if (startIndex == -1) return;
+
+        for (int i = 0; i < gig.DurationDays; i++)
+        {
+            int targetIdx = startIndex + i;
+            if (targetIdx >= DaysSequence.Length)
+            {
+                ShowStatus("Keikka ei mahdu viikon loppuun!", "bg-rose-950/80 text-rose-300 border-rose-500/40");
+                return;
+            }
+        }
+
+        for (int i = 0; i < gig.DurationDays; i++)
+        {
+            string day = DaysSequence[startIndex + i];
+            weekPlan.Days[day] = new WeekSlot("gig", gig.Id);
+        }
+
+        selectedGigToAssign = null;
+        ShowStatus($"Keikka '{gig.ClientName}' sijoitettu päiviin alkaen {startDay}!", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+    }
+
+    private void HandleClearSlot(string dayKey)
+    {
+        if (weekPlan.Days.TryGetValue(dayKey, out var slot))
+        {
+            if (slot.Type == "gig" && !string.IsNullOrEmpty(slot.GigId))
+            {
+                var gigId = slot.GigId;
+                foreach (var k in DaysSequence)
+                {
+                    if (weekPlan.Days.TryGetValue(k, out var s) && s.GigId == gigId && s.Result == null)
+                    {
+                        weekPlan.Days[k] = new WeekSlot("empty");
+                    }
+                }
+            }
+            else
+            {
+                weekPlan.Days[dayKey] = new WeekSlot("empty");
+            }
+            ShowStatus($"Päivä {dayKey} tyhjennetty.", "bg-amber-950/80 text-amber-300 border-amber-500/40");
+        }
+    }
+
+    private void HandleQuickAction((string DayKey, string ActionType) payload)
+    {
+        if (payload.ActionType == "rest")
+        {
+            weekPlan.Days[payload.DayKey] = new WeekSlot("rest");
+            ShowStatus($"Päivä {payload.DayKey} merkitty lepopäiväksi.", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+        }
+    }
+
+    private void ExecuteDay(string dayKey)
+    {
+        if (!weekPlan.Days.TryGetValue(dayKey, out var slot))
+        {
+            slot = new WeekSlot("empty");
+        }
+
+        if (slot.Type == "gig" && !string.IsNullOrEmpty(slot.GigId))
+        {
+            var gig = availableGigs.FirstOrDefault(g => g.Id == slot.GigId);
+            activeMinigameGig = gig ?? new Gig("sample", "sample", "Teollisuushuolto", 1, 1, 100, 200, new List<string>(), 0, "");
+        }
+        else if (slot.Type == "rest" || slot.Type == "empty")
+        {
+            RestToday();
+        }
+        else
+        {
+            ShowStatus($"Päivä {dayKey} suoritettu.", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+            AdvanceNextDay();
+        }
+    }
+
+    private void HandleMinigameCompleted(MinigameResult result)
+    {
+        var currentDay = state.Player.DayOfWeek;
+        var gig = activeMinigameGig;
+        activeMinigameGig = null;
+
+        weekPlan.Days[currentDay] = new WeekSlot("gig", gig?.Id, null, result);
+
+        float newStamina = Math.Clamp(state.Player.Stamina - 18f, 0f, 100f);
+        double newCash = state.Player.Cash + result.PayEur;
+        double newLife = state.Player.LifetimeCash + result.PayEur;
+        int newRep = Math.Clamp(state.Player.PersonalRep + result.RepDelta, 0, 200);
+        int newXp = state.Player.Xp + result.XpGained;
+        int newLevel = state.Player.Level;
+
+        int reqXp = state.Player.Level * 200;
+        if (newXp >= reqXp)
+        {
+            newLevel++;
+            newXp -= reqXp;
+            ShowStatus($"ONNITTELUT! Nousit tasolle {newLevel}!", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+        }
+        else
+        {
+            ShowStatus($"Päivä suoritettu: {result.Grade.ToUpper()}! +{result.PayEur:0} € | +{result.XpGained} XP", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+        }
+
+        state = state with
+        {
+            Player = state.Player with
+            {
+                Stamina = newStamina,
+                Cash = newCash,
+                LifetimeCash = newLife,
+                PersonalRep = newRep,
+                Xp = newXp,
+                Level = newLevel
+            }
+        };
+
+        AdvanceNextDay();
+    }
+
+    private void CancelMinigame()
+    {
+        activeMinigameGig = null;
+        ShowStatus("Minipeli peruutettu.", "bg-amber-950/80 text-amber-300 border-amber-500/40");
+    }
+
+    private void RestToday()
+    {
+        float newStamina = Math.Clamp(state.Player.Stamina + 40f, 0f, 100f);
+        weekPlan.Days[state.Player.DayOfWeek] = new WeekSlot("rest", null, null, null);
+
+        state = state with
+        {
+            Player = state.Player with
+            {
+                Stamina = newStamina
+            }
+        };
+
+        ShowStatus($"Lepopäivä suoritettu! Stamina palautui (+40) -> {Math.Round(newStamina, 0)}%.", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+        AdvanceNextDay();
+    }
+
+    private void AdvanceNextDay()
+    {
+        int currentIndex = Array.IndexOf(DaysSequence, state.Player.DayOfWeek);
+        if (currentIndex == -1) currentIndex = 0;
+
+        if (currentIndex == DaysSequence.Length - 1)
+        {
+            // End of week summary (Sunday -> Next Week Monday)
+            // Deduct living expenses: 150 €, plus weekly debt service if active
+            double deductions = 150.0;
+            if (currentLoan.Principal > 0)
+            {
+                deductions += currentLoan.WeeklyPayment;
+                currentLoan = currentLoan with { Principal = Math.Max(0, currentLoan.Principal - (currentLoan.WeeklyPayment * 0.7)) };
+            }
+
+            double afterExpenses = state.Player.Cash - deductions;
+            int nextWeek = state.Player.Week + 1;
+
+            state = state with
+            {
+                Player = state.Player with
+                {
+                    Week = nextWeek,
+                    DayOfWeek = "MA",
+                    Cash = afterExpenses,
+                    CurrentHour = 8,
+                    CurrentMinute = 0
+                }
+            };
+
+            _ = Task.Run(async () =>
+            {
+                try { await JS.InvokeVoidAsync("ThemeManager.setTimeOfDay", 8, 0); } catch { }
+            });
+
+            foreach (var d in DaysSequence)
+            {
+                weekPlan.Days[d] = new WeekSlot("empty");
+            }
+
+            ShowStatus($"Viikko {nextWeek} alkoi! Kulut ja lainanlyhennys (-{deductions:N0} €) veloitettu kassasta.", "bg-amber-950/80 text-amber-300 border-amber-500/40");
+        }
+        else
+        {
+            string nextDay = DaysSequence[currentIndex + 1];
+            state = state with
+            {
+                Player = state.Player with
+                {
+                    DayOfWeek = nextDay,
+                    CurrentHour = 8,
+                    CurrentMinute = 0
+                }
+            };
+
+            _ = Task.Run(async () =>
+            {
+                try { await JS.InvokeVoidAsync("ThemeManager.setTimeOfDay", 8, 0); } catch { }
+            });
+        }
+    }
+
+    private void ShowStatus(string msg, string bannerClass)
+    {
+        statusMessage = msg;
+        statusBannerClass = bannerClass;
+    }
+
+    private void ToggleDevToggles() => showDevControls = !showDevControls;
+
+    private void SetStamina(float st)
+    {
+        state = state with { Player = state.Player with { Stamina = st } };
+        ShowStatus($"Stamina asetettu: {st}%", "bg-amber-950/80 text-amber-300 border-amber-500/40");
+    }
+
+    private void AddCash()
+    {
+        state = state with { Player = state.Player with { Cash = state.Player.Cash + 500.0, LifetimeCash = state.Player.LifetimeCash + 500.0 } };
+        ShowStatus("Lisätty 500 € kassaan.", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+    }
+
+    private void UnlockPlcCert()
+    {
+        var certs = new List<string>(state.Player.Certifications);
+        if (!certs.Contains("plc_basics"))
+        {
+            certs.Add("plc_basics");
+            state = state with
+            {
+                Player = state.Player with
+                {
+                    Certifications = certs,
+                    PersonalRep = Math.Max(state.Player.PersonalRep, 105)
+                }
+            };
+            ShowStatus("Sertifikaatti 'PLC-Automaation perusteet' myönnetty & maine korotettu 105!", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+        }
+    }
+
+    private void LaunchTestGame(string minigameType)
+    {
+        activeMinigameGig = minigameType switch
+        {
+            "wiring" => new Gig("test-wiring", "test-client", "Keskustestaus Oy", 1, 1, 150.0, 280.0, new(), 0, DateTime.Now.AddDays(1).ToString("o"), "wiring", "Moottorin DIN-kiskon ja kontaktorikeskuksen johdotus"),
+            "troubleshooting" => new Gig("test-trouble", "test-client", "Diagnostiikka Oy", 1, 1, 180.0, 320.0, new(), 0, DateTime.Now.AddDays(1).ToString("o"), "troubleshooting", "Pumppaamon hälytysvianetsintä yleismittarilla"),
+            _ => new Gig("test-timing", "test-client", "Taajuussynkro Oy", 1, 1, 120.0, 250.0, new(), 0, DateTime.Now.AddDays(1).ToString("o"), "timing", "Ilmanvaihdon taajuusmuuttajan vaihetahdistus")
+        };
+        ShowStatus($"Käynnistetään minipeli: {minigameType.ToUpper()}", "bg-cyan-950/80 text-cyan-300 border-cyan-500/40");
+    }
+
+    private void ResetDemoState()
+    {
+        InitializeGame();
+        ShowStatus("Alkutila palautettu.", "bg-emerald-950/80 text-emerald-300 border-emerald-500/40");
+    }
+
+    public void Dispose()
+    {
+        passiveIncomeTimer?.Dispose();
+    }
+
+    private string currentTheme = "dark";
+
+    private string GetContainerThemeClass() => currentTheme switch
+    {
+        "light" => "bg-slate-100 text-slate-900 light",
+        "dusk" => "bg-[#131124] text-slate-100 dusk",
+        _ => "bg-slate-950 text-slate-100 dark"
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("ThemeManager.setTimeOfDay", state.Player.CurrentHour, state.Player.CurrentMinute);
+                currentTheme = await JS.InvokeAsync<string>("ThemeManager.getTheme");
+                StateHasChanged();
+            }
+            catch { }
+        }
+    }
+
+    private void HandleThemeModeChanged(string theme)
+    {
+        currentTheme = theme;
+        StateHasChanged();
+    }
+}

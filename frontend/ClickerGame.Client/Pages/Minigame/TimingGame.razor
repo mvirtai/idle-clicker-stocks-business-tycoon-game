@@ -1,0 +1,1286 @@
+@namespace ClickerGame.Client.Pages.Minigame
+@using ClickerGame.Client.Models
+@using System.Threading
+@implements IDisposable
+@inject IJSRuntime JS
+
+<div class="timing-game-screen @(isFlashHit ? "flash-hit" : "") @(isFlashMiss ? "flash-miss" : "")" 
+     tabindex="0" 
+     @ref="gameContainerRef"
+     @onkeydown="HandleKeyDown">
+
+    <!-- Top Instrument Bar -->
+    <header class="game-hud-bar">
+        <div class="hud-left">
+            <span class="hud-tag font-mono">MITTALAITE // CALIBRATION RIG MK-IV</span>
+            <h2 class="hud-title font-heading">
+                @(CurrentGig != null ? $"{CurrentGig.ClientName} // VAIHETAHDISTUS" : "GENERAATTORIN VAIHEKALIBROINTI")
+            </h2>
+        </div>
+
+        <div class="hud-center">
+            <div class="hud-pill font-mono">
+                <span class="label">STAMINA:</span>
+                <span class="val text-cyan">@Math.Round(PlayerStamina, 0)%</span>
+            </div>
+            <div class="hud-pill font-mono">
+                <span class="label">SYKLI:</span>
+                <span class="val">@(completedCycles + 1) / @maxCycles</span>
+            </div>
+            <div class="hud-pill font-mono">
+                <span class="label">PUTKI (STREAK):</span>
+                <span class="val @(streak >= 3 ? "text-amber" : "")">@streak@(streak >= 3 ? " 🔥" : "")</span>
+            </div>
+        </div>
+
+        <div class="hud-right">
+            <button class="btn-industrial btn-sm btn-abort" @onclick="AbortGame">
+                ✕ KESKEYTÄ
+            </button>
+        </div>
+    </header>
+
+    <!-- Phase Banner & 24-LED Step Progress Bar -->
+    <div class="hud-phase-strip">
+        <div class="phase-info font-heading">
+            <span class="phase-badge font-mono">@CurrentPhaseTitle</span>
+            <span class="phase-progress-text font-mono">EDISTYMINEN: @completedCycles / @maxCycles SYKLIÄ</span>
+        </div>
+        <div class="led-strip-container">
+            @for (int i = 0; i < maxCycles; i++)
+            {
+                var idx = i;
+                var isCurrent = idx == completedCycles;
+                var isPast = idx < attemptResults.Count;
+                var isHit = isPast && attemptResults[idx].IsHit;
+                var isMiss = isPast && !attemptResults[idx].IsHit;
+
+                <div class="led-pip @(isCurrent ? "led-current" : isHit ? "led-hit" : isMiss ? "led-miss" : "led-future")"
+                     title="Sykli @(idx + 1)">
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (!isGameOver)
+    {
+        <!-- Main Oscilloscope / Dial Canvas -->
+        <main class="game-stage">
+            <div class="scope-housing @(IsInsideSector ? "housing-locked" : "")">
+                <div class="bezel-screw top-left"></div>
+                <div class="bezel-screw top-right"></div>
+                <div class="bezel-screw bottom-left"></div>
+                <div class="bezel-screw bottom-right"></div>
+
+                <div class="scope-screen @(IsInsideSector ? "scope-screen-locked" : "")">
+                    <!-- Oscilloscope Grid Lines -->
+                    <div class="scope-grid"></div>
+
+                    <!-- Ambient radar glow when target in pocket -->
+                    <div class="target-ambient-wash @(IsInsideSector ? "wash-active" : "")"></div>
+
+                    <!-- SVG Circular Gauge -->
+                    <svg viewBox="0 0 320 320" class="dial-svg">
+                        <defs>
+                            <!-- Glow filters -->
+                            <filter id="cyan-glow" x="-30%" y="-30%" width="160%" height="160%">
+                                <feGaussianBlur stdDeviation="5" result="blur" />
+                                <feMerge>
+                                    <feMergeNode in="blur" />
+                                    <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                            </filter>
+                            <filter id="laser-glow" x="-50%" y="-50%" width="200%" height="200%">
+                                <feGaussianBlur stdDeviation="8" result="blur" />
+                                <feMerge>
+                                    <feMergeNode in="blur" />
+                                    <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                            </filter>
+                        </defs>
+
+                        <!-- Outer Metal Dial Ring -->
+                        <circle cx="160" cy="160" r="140" class="dial-outer-ring" />
+                        <circle cx="160" cy="160" r="120" class="dial-track-ring" />
+
+                        <!-- Degree ticks every 30 deg (0 deg = 12 o'clock / Top) -->
+                        @for (int deg = 0; deg < 360; deg += 30)
+                        {
+                            var rad = (deg - 90) * Math.PI / 180.0;
+                            var x1 = 160 + 132 * Math.Cos(rad);
+                            var y1 = 160 + 132 * Math.Sin(rad);
+                            var x2 = 160 + 120 * Math.Cos(rad);
+                            var y2 = 160 + 120 * Math.Sin(rad);
+                            <line x1="@x1.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)" 
+                                  y1="@y1.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)" 
+                                  x2="@x2.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)" 
+                                  y2="@y2.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)" 
+                                  class="dial-tick" />
+                        }
+
+                        <!-- TARGET SECTOR: Shaded Phosphor Wedge Track (r=95, width=50 covers r=70 to 120) -->
+                        <circle cx="160" cy="160" r="95"
+                                class="dial-sector-wedge @(IsInsideSector ? "wedge-active" : "")"
+                                transform="rotate(@((sectorStartAngle - 90.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)), 160, 160)"
+                                style="stroke-dasharray: @((2.0 * Math.PI * 95.0 * (sectorArcDegrees / 360.0)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)) @((2.0 * Math.PI * 95.0 * (1.0 - (sectorArcDegrees / 360.0))).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)); stroke-dashoffset: 0;" />
+
+                        <!-- Target Sector Outer Arc -->
+                        <circle cx="160" cy="160" r="120" 
+                                class="dial-sector-arc @(IsInsideSector ? "arc-active" : "")"
+                                transform="rotate(@((sectorStartAngle - 90.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)), 160, 160)"
+                                style="stroke-dasharray: @sectorArcLength.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) @((circumference - sectorArcLength).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)); stroke-dashoffset: 0;" />
+
+                        <!-- Target Sector Inner Arc -->
+                        <circle cx="160" cy="160" r="70" 
+                                class="dial-sector-inner @(IsInsideSector ? "arc-active" : "")"
+                                transform="rotate(@((sectorStartAngle - 90.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)), 160, 160)"
+                                style="stroke-dasharray: @((2.0 * Math.PI * 70.0 * (sectorArcDegrees / 360.0)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)) @((2.0 * Math.PI * 70.0 * (1.0 - (sectorArcDegrees / 360.0))).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)); stroke-dashoffset: 0;" />
+
+                        <!-- Sector Gate Line: ENTRY (Laser Boundary) -->
+                        <g transform="rotate(@((sectorStartAngle - 90.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)), 160, 160)">
+                            <line x1="230" y1="160" x2="280" y2="160" class="sector-gate-line gate-entry" />
+                            <circle cx="280" cy="160" r="4" class="gate-pip" />
+                        </g>
+
+                        <!-- Sector Gate Line: EXIT (Laser Boundary) -->
+                        <g transform="rotate(@(((sectorStartAngle + sectorArcDegrees - 90.0) % 360.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)), 160, 160)">
+                            <line x1="230" y1="160" x2="280" y2="160" class="sector-gate-line gate-exit" />
+                            <circle cx="280" cy="160" r="4" class="gate-pip" />
+                        </g>
+
+                        <!-- Center Target Pip (Sweet Spot) on Sector Arc -->
+                        <g transform="rotate(@(((sectorStartAngle + (sectorArcDegrees / 2.0) - 90.0) % 360.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)), 160, 160)">
+                            <polygon points="280,156 285,160 280,164 275,160" class="sweet-spot-diamond" />
+                        </g>
+
+                        <!-- Central Target Lock Reticle (Instinctive visual indicator) -->
+                        <g class="dial-reticle @(IsInsideSector ? "reticle-locked" : "")">
+                            <circle cx="160" cy="160" r="28" class="reticle-ring" />
+                            <circle cx="160" cy="160" r="38" class="reticle-pulse-ring" />
+                            <line x1="160" y1="126" x2="160" y2="136" class="reticle-crosshair" />
+                            <line x1="160" y1="184" x2="160" y2="194" class="reticle-crosshair" />
+                            <line x1="126" y1="160" x2="136" y2="160" class="reticle-crosshair" />
+                            <line x1="184" y1="160" x2="194" y2="160" class="reticle-crosshair" />
+                        </g>
+
+                        <!-- Rotating Needle / Light Signal (0 deg = 12 o'clock / Top) -->
+                        <g transform="rotate(@currentAngle.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture), 160, 160)">
+                            <!-- Laser Needle Line -->
+                            <line x1="160" y1="160" x2="160" y2="35" class="dial-needle @(IsInsideSector ? "needle-laser-active" : "")" />
+                            <!-- Rotating Signal Head / Blip -->
+                            <circle cx="160" cy="35" r="@(IsInsideSector ? "13" : "8")" class="dial-signal-dot @(IsInsideSector ? "dot-laser-active" : "")" />
+                        </g>
+
+                        <!-- Center Pivot -->
+                        <circle cx="160" cy="160" r="16" class="dial-center-cap" />
+                        <circle cx="160" cy="160" r="6" class="dial-center-pin @(IsInsideSector ? "pin-active" : "")" />
+                    </svg>
+
+                    <!-- Real-time HUD stats on dial -->
+                    <div class="dial-readouts font-mono">
+                        <div class="readout-item">
+                            <span class="readout-label">KULMA:</span>
+                            <span class="readout-val">@Math.Round(currentAngle, 0)°</span>
+                        </div>
+                        <div class="readout-item">
+                            <span class="readout-label">LUKITUS:</span>
+                            <span class="readout-val @(IsInsideSector ? "text-cyan font-bold" : "text-muted")">
+                                @(IsInsideSector ? "⚡ LUKITTAVISSA!" : "○ ODOTTAA...")
+                            </span>
+                        </div>
+                        <div class="readout-item">
+                            <span class="readout-label">LEVEYS:</span>
+                            <span class="readout-val">@Math.Round(sectorArcDegrees, 0)°</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Big Tactical Trigger Button below screen -->
+                <div class="scope-console">
+                    <button class="btn-industrial btn-hit @(IsInsideSector ? "btn-hit-active" : "btn-hit-idle")" @onclick="TriggerHit">
+                        <span class="hit-icon">⚡</span>
+                        <span class="hit-label font-heading">
+                            @(IsInsideSector ? "LUKITSE NYT! [ VÄLILYÖNTI ]" : "VALMISTAUDU... [ VÄLILYÖNTI ]")
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Side Instrument Telemetry -->
+            <div class="telemetry-panel industrial-card">
+                <div class="telemetry-header">
+                    <span class="led-indicator led-cyan"></span>
+                    <span class="font-heading title">ANTURILOGI</span>
+                </div>
+
+                <div class="telemetry-body font-mono">
+                    <div class="metric-row">
+                        <span>VAIHE:</span>
+                        <span class="text-cyan">@CurrentPhase / 3</span>
+                    </div>
+                    <div class="metric-row">
+                        <span>STAMINA:</span>
+                        <span>@Math.Round(PlayerStamina, 0)%</span>
+                    </div>
+                    <div class="metric-row">
+                        <span>IKKUNA:</span>
+                        <span>@Math.Round((0.5 + 0.5 * (PlayerStamina / 100)) * 100, 0)%</span>
+                    </div>
+
+                    <hr class="telemetry-divider" />
+
+                    <div class="history-log">
+                        <span class="log-title">SYKLITULOKSET (@attemptResults.Count / @maxCycles):</span>
+                        @if (attemptResults.Count == 0)
+                        {
+                            <span class="log-empty">Paina välilyöntiä kun valo osuu siniselle sektorille...</span>
+                        }
+                        else
+                        {
+                            @for (int i = attemptResults.Count - 1; i >= 0; i--)
+                            {
+                                var res = attemptResults[i];
+                                <div class="log-entry @(res.IsHit ? "log-hit" : "log-miss")">
+                                    <span>#@(i + 1) @(res.IsHit ? "OSUMA" : "HUDI")</span>
+                                    <span>@(res.IsHit ? $"{res.Accuracy:0}%" : "0%") @(res.StreakBonus ? "🔥" : "")</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </main>
+    }
+    else
+    {
+        <!-- Result Report Modal -->
+        <div class="result-modal-backdrop">
+            <div class="industrial-card result-report-card">
+                <div class="report-header">
+                    <div class="stamp-badge @GetGradeStampClass()">@finalResult!.Grade.ToUpper()</div>
+                    <h3 class="report-title font-heading">HUOLTOTEHTÄVÄN TARKASTUSPÖYTÄKIRJA</h3>
+                    <span class="report-sub font-mono">24 SYKLIN KALIBROINTISARJA VALMIS</span>
+                </div>
+
+                <div class="report-body font-mono">
+                    <div class="report-stat-row">
+                        <span>KOKONAISTARKKUUS:</span>
+                        <span class="text-cyan font-bold">@Math.Round(finalResult.Precision, 1)%</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>HYVÄKSYTYT SYKLIT:</span>
+                        <span>@attemptResults.Count(r => r.IsHit) / @maxCycles</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>URAKKAPALKKIO:</span>
+                        <span class="text-green font-bold">+@finalResult.PayEur.ToString("0") €</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>KOKEMUSPISTEET:</span>
+                        <span class="text-amber font-bold">+@finalResult.XpGained XP</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>MAINEVAIKUTUS:</span>
+                        <span class="font-bold @(finalResult.RepDelta >= 0 ? "text-green" : "text-danger")">
+                            @(finalResult.RepDelta >= 0 ? $"+{finalResult.RepDelta}" : finalResult.RepDelta.ToString()) MAINETTA
+                        </span>
+                    </div>
+                </div>
+
+                <div class="report-actions">
+                    <button class="btn-industrial btn-industrial-cyan btn-lg" @onclick="SubmitResult">
+                        ✔ HYVÄKSY JA PALAA KALENTERIIN
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+.timing-game-screen {
+    position: fixed;
+    inset: 0;
+    background-color: #080b11;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    outline: none;
+    user-select: none;
+    transition: background-color 0.15s ease;
+}
+
+/* Flash feedback */
+.flash-hit {
+    box-shadow: inset 0 0 70px rgba(0, 212, 255, 0.5);
+    animation: flash-cyan 0.25s ease-out;
+}
+
+.flash-miss {
+    box-shadow: inset 0 0 70px rgba(239, 68, 68, 0.6);
+    animation: flash-red 0.3s ease-out;
+}
+
+@@keyframes flash-cyan {
+    0% { background-color: #0e2436; }
+    100% { background-color: #080b11; }
+}
+
+@@keyframes flash-red {
+    0% { background-color: #330f0f; }
+    100% { background-color: #080b11; }
+}
+
+/* Top HUD */
+.game-hud-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    background: #111622;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.hud-tag {
+    font-size: 0.65rem;
+    color: var(--amber-primary);
+}
+
+.hud-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+    color: #ffffff;
+}
+
+.hud-center {
+    display: flex;
+    gap: 1rem;
+}
+
+.hud-pill {
+    background: #090c13;
+    border: 1px solid var(--border-color);
+    padding: 0.25rem 0.65rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    display: flex;
+    gap: 0.4rem;
+}
+
+.hud-pill .label { color: var(--text-muted); }
+.hud-pill .val { font-weight: 700; }
+.hud-pill .text-cyan { color: var(--cyan-primary); }
+.hud-pill .text-amber { color: var(--amber-primary); }
+
+.btn-abort {
+    border-color: #ef4444;
+    color: #fca5a5;
+    font-size: 0.75rem;
+}
+
+/* Phase Strip & LED Progress Bar */
+.hud-phase-strip {
+    background: #0b0f19;
+    border-bottom: 1px solid #1c2638;
+    padding: 0.45rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.phase-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+}
+
+.phase-badge {
+    color: var(--amber-primary);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.phase-progress-text {
+    color: var(--cyan-primary);
+    font-size: 0.7rem;
+}
+
+.led-strip-container {
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    gap: 4px;
+    height: 10px;
+    background: #060910;
+    padding: 2px 4px;
+    border-radius: 3px;
+    border: 1px solid #1e293b;
+}
+
+.led-pip {
+    border-radius: 2px;
+    transition: all 0.2s ease;
+}
+
+.led-future {
+    background: #1e293b;
+}
+
+.led-current {
+    background: var(--cyan-primary);
+    box-shadow: 0 0 8px var(--cyan-primary);
+    animation: pulse-led 0.6s infinite alternate;
+}
+
+.led-hit {
+    background: #10b981;
+    box-shadow: 0 0 6px #10b981;
+}
+
+.led-miss {
+    background: #ef4444;
+    box-shadow: 0 0 6px #ef4444;
+}
+
+@@keyframes pulse-led {
+    from { opacity: 0.4; }
+    to { opacity: 1; }
+}
+
+/* Main Stage */
+.game-stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding: 1rem 1.5rem;
+    position: relative;
+    max-width: 1100px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Oscilloscope Housing */
+.scope-housing {
+    background: #141a27;
+    border: 3px solid #2a354c;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), inset 0 2px 0 rgba(255, 255, 255, 0.1);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    transition: all 0.15s ease;
+}
+
+.housing-locked {
+    border-color: #00d4ff;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 30px rgba(0, 212, 255, 0.25);
+}
+
+.bezel-screw {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #394765;
+    border-radius: 50%;
+    border: 1px solid #1c2436;
+}
+
+.bezel-screw::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 1px;
+    width: 8px;
+    height: 2px;
+    background: #1c2436;
+}
+
+.top-left { top: 8px; left: 8px; }
+.top-right { top: 8px; right: 8px; }
+.bottom-left { bottom: 8px; left: 8px; }
+.bottom-right { bottom: 8px; right: 8px; }
+
+/* CRT Screen */
+.scope-screen {
+    width: 380px;
+    height: 380px;
+    background: radial-gradient(circle, #0e202a 0%, #061016 100%);
+    border: 2px solid #00d4ff44;
+    border-radius: 50%;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 0 30px rgba(0, 212, 255, 0.15), 0 0 20px rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.scope-screen-locked {
+    border-color: #00f0ff !important;
+    box-shadow: inset 0 0 50px rgba(0, 229, 255, 0.4), 0 0 40px rgba(0, 229, 255, 0.45) !important;
+}
+
+/* Grid overlay */
+.scope-grid {
+    position: absolute;
+    inset: 0;
+    background-image: 
+        radial-gradient(circle, rgba(0, 212, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(to right, rgba(0, 212, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 212, 255, 0.04) 1px, transparent 1px);
+    background-size: 20px 20px;
+    pointer-events: none;
+}
+
+.target-ambient-wash {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle, rgba(0, 212, 255, 0.25) 0%, transparent 70%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease;
+}
+
+.wash-active {
+    opacity: 1;
+}
+
+/* SVG Dial */
+.dial-svg {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    z-index: 2;
+}
+
+.dial-outer-ring {
+    fill: none;
+    stroke: #25334a;
+    stroke-width: 4;
+}
+
+.dial-track-ring {
+    fill: none;
+    stroke: rgba(0, 212, 255, 0.15);
+    stroke-width: 8;
+}
+
+.dial-tick {
+    stroke: #48618a;
+    stroke-width: 2;
+}
+
+/* Target Sector Elements */
+.dial-sector-wedge {
+    fill: none;
+    stroke: rgba(0, 212, 255, 0.18);
+    stroke-width: 50;
+    transition: all 0.1s ease;
+}
+
+.wedge-active {
+    stroke: rgba(0, 240, 255, 0.48) !important;
+    filter: drop-shadow(0 0 16px rgba(0, 240, 255, 0.8));
+}
+
+.dial-sector-arc {
+    fill: none;
+    stroke: var(--cyan-primary);
+    stroke-width: 10;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 8px var(--cyan-glow));
+    transition: all 0.1s ease;
+}
+
+.dial-sector-inner {
+    fill: none;
+    stroke: rgba(0, 212, 255, 0.6);
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.arc-active {
+    stroke: #ffffff !important;
+    stroke-width: 13 !important;
+    filter: drop-shadow(0 0 14px #00f0ff) !important;
+}
+
+/* Gate boundaries */
+.sector-gate-line {
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.gate-entry {
+    stroke: #34d399;
+    filter: drop-shadow(0 0 6px #34d399);
+}
+
+.gate-exit {
+    stroke: #f43f5e;
+    filter: drop-shadow(0 0 6px #f43f5e);
+}
+
+.gate-pip {
+    fill: #ffffff;
+}
+
+.sweet-spot-diamond {
+    fill: #fbbf24;
+    filter: drop-shadow(0 0 6px #fbbf24);
+}
+
+/* Central Reticle */
+.dial-reticle {
+    opacity: 0.3;
+    transition: all 0.1s ease;
+}
+
+.reticle-ring {
+    fill: none;
+    stroke: var(--cyan-primary);
+    stroke-width: 2;
+}
+
+.reticle-pulse-ring {
+    fill: none;
+    stroke: var(--cyan-primary);
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+}
+
+.reticle-crosshair {
+    stroke: var(--cyan-primary);
+    stroke-width: 2;
+}
+
+.reticle-locked {
+    opacity: 1 !important;
+}
+
+.reticle-locked .reticle-ring {
+    stroke: #10b981 !important;
+    stroke-width: 3;
+    filter: drop-shadow(0 0 10px #10b981);
+}
+
+.reticle-locked .reticle-pulse-ring {
+    stroke: #34d399 !important;
+    animation: spin-reticle 2s linear infinite;
+}
+
+@@keyframes spin-reticle {
+    from { transform: rotate(0deg); transform-origin: 160px 160px; }
+    to { transform: rotate(360deg); transform-origin: 160px 160px; }
+}
+
+/* Needle / Rotating Signal */
+.dial-needle {
+    stroke: #ffb703;
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke 0.08s ease;
+}
+
+.needle-laser-active {
+    stroke: #ffffff !important;
+    stroke-width: 6 !important;
+    filter: drop-shadow(0 0 12px #00f0ff);
+}
+
+.dial-signal-dot {
+    fill: #ffb703;
+    filter: drop-shadow(0 0 10px #ffb703);
+    transition: all 0.08s ease;
+}
+
+.dot-laser-active {
+    fill: #ffffff !important;
+    filter: drop-shadow(0 0 18px #00f0ff) drop-shadow(0 0 6px #ffffff) !important;
+}
+
+.dial-center-cap {
+    fill: #161e2e;
+    stroke: #3c4d6d;
+    stroke-width: 3;
+}
+
+.dial-center-pin {
+    fill: var(--amber-primary);
+    transition: fill 0.1s ease;
+}
+
+.pin-active {
+    fill: #10b981 !important;
+    filter: drop-shadow(0 0 8px #10b981);
+}
+
+/* Dial Readouts */
+.dial-readouts {
+    position: absolute;
+    bottom: 24px;
+    display: flex;
+    gap: 12px;
+    font-size: 0.68rem;
+    background: rgba(8, 12, 18, 0.85);
+    padding: 3px 8px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    z-index: 5;
+}
+
+.readout-label { color: var(--text-muted); }
+.readout-val { font-weight: 700; color: #ffffff; }
+
+/* Console & Hit button */
+.scope-console {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.btn-hit {
+    width: 320px;
+    height: 56px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    border-radius: 6px;
+    transition: all 0.12s ease;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+}
+
+.btn-hit-idle {
+    background: #152233;
+    border: 2px solid #23364f;
+    color: #94a3b8;
+}
+
+.btn-hit-active {
+    background: linear-gradient(135deg, #00d4ff 0%, #0088cc 100%) !important;
+    border: 2px solid #ffffff !important;
+    color: #030a14 !important;
+    box-shadow: 0 0 25px #00d4ff, 0 0 50px rgba(0, 212, 255, 0.6) !important;
+    transform: scale(1.04);
+    animation: pulse-hit-btn 0.35s infinite alternate;
+}
+
+@@keyframes pulse-hit-btn {
+    from { filter: brightness(1); }
+    to { filter: brightness(1.2); }
+}
+
+.hit-icon {
+    font-size: 1.35rem;
+}
+
+/* Telemetry Panel */
+.telemetry-panel {
+    width: 260px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    height: 480px;
+}
+
+.telemetry-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+.telemetry-header .title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 0.05em;
+}
+
+.telemetry-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+}
+
+.metric-row {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-secondary);
+}
+
+.telemetry-divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 0.5rem 0;
+}
+
+.history-log {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    overflow-y: auto;
+    max-height: 250px;
+}
+
+.log-title {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.log-empty {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+.log-entry {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 6px;
+    border-radius: 2px;
+    font-size: 0.72rem;
+}
+
+.log-hit {
+    background: rgba(0, 212, 255, 0.12);
+    color: var(--cyan-primary);
+    border-left: 2px solid var(--cyan-primary);
+}
+
+.log-miss {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--danger-red);
+    border-left: 2px solid var(--danger-red);
+}
+
+/* Modal Report */
+.result-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    padding: 1.5rem;
+}
+
+.result-report-card {
+    max-width: 500px;
+    width: 100%;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    position: relative;
+    border: 2px solid var(--border-highlight);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+}
+
+.report-header {
+    text-align: center;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.stamp-badge {
+    padding: 0.3rem 1.25rem;
+    font-family: var(--font-heading);
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    border: 3px dashed;
+    border-radius: 4px;
+    transform: rotate(-3deg);
+    display: inline-block;
+    margin-bottom: 0.5rem;
+}
+
+.stamp-badge.stamp-perfect {
+    border-color: #fbbf24;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+}
+
+.stamp-badge.stamp-good {
+    border-color: #38bdf8;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.1);
+}
+
+.stamp-badge.stamp-fail {
+    border-color: #ef4444;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.report-title {
+    font-size: 1.25rem;
+    color: #ffffff;
+    margin: 0;
+}
+
+.report-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.report-body {
+    background: #090d15;
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    font-size: 0.85rem;
+}
+
+.report-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.report-actions {
+    display: flex;
+    justify-content: center;
+}
+</style>
+
+@code {
+    [Parameter]
+    public Gig? CurrentGig { get; set; }
+
+    [Parameter]
+    public float PlayerStamina { get; set; } = 100f;
+
+    [Parameter]
+    public EventCallback<MinigameResult> OnComplete { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private ElementReference gameContainerRef;
+    private PeriodicTimer? timer;
+    private CancellationTokenSource? cts;
+
+    // Dial geometry
+    private readonly double radius = 120.0;
+    private double circumference => 2.0 * Math.PI * radius; // ~753.98
+    private double currentAngle = 0.0;
+    private double rotationSpeed = 1.85; // Smooth rhythmic cadence (~3.9s per full 360 deg)
+    
+    // Sector geometry
+    private double sectorStartAngle = 180.0;
+    private double sectorArcDegrees = 65.0;
+    private double sectorArcLength => circumference * (sectorArcDegrees / 360.0);
+
+    // Gameplay state: 24 cycles (3x longer than original 8)
+    private int maxCycles = 24;
+    private int completedCycles = 0;
+    private int streak = 0;
+    private List<(bool IsHit, double Accuracy, bool StreakBonus)> attemptResults = new();
+    private bool isFlashHit = false;
+    private bool isFlashMiss = false;
+    private bool isGameOver = false;
+    private MinigameResult? finalResult;
+    private bool wasInsideSector = false;
+
+    private int CurrentPhase
+    {
+        get
+        {
+            if (completedCycles < 8) return 1;
+            if (completedCycles < 16) return 2;
+            return 3;
+        }
+    }
+
+    private string CurrentPhaseTitle => CurrentPhase switch
+    {
+        1 => "VAIHE 1/3: TAAJUUDEN KALIBROINTI",
+        2 => "VAIHE 2/3: VAIHE-ERON TASAUS",
+        _ => "VAIHE 3/3: KUORMITUKSEN KYTKENTÄ"
+    };
+
+    protected override void OnInitialized()
+    {
+        // Calculate sector width using the formula:
+        // W(Stamina) = W_base * (0.5 + 0.5 * Stamina / 100) * beta_tool
+        double baseArc = 75.0;
+        double staminaFactor = 0.5 + 0.5 * (Math.Clamp(PlayerStamina, 5f, 100f) / 100.0);
+        double betaTool = 1.0;
+        sectorArcDegrees = baseArc * staminaFactor * betaTool;
+
+        // Position target sector randomly in dial (e.g. 100 to 240 deg)
+        var rng = new Random();
+        sectorStartAngle = rng.Next(100, 240);
+
+        StartGameLoop();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await gameContainerRef.FocusAsync();
+            }
+            catch { }
+        }
+    }
+
+    private void StartGameLoop()
+    {
+        cts = new CancellationTokenSource();
+        timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20)); // ~50 FPS
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await timer.WaitForNextTickAsync(cts.Token))
+                {
+                    currentAngle = (currentAngle + rotationSpeed) % 360.0;
+
+                    // Audio cue upon entering target sector
+                    bool nowInside = IsInsideSector;
+                    if (nowInside && !wasInsideSector)
+                    {
+                        wasInsideSector = true;
+                        _ = JS.InvokeVoidAsync("GameAudio.playSectorEntry");
+                    }
+                    else if (!nowInside && wasInsideSector)
+                    {
+                        wasInsideSector = false;
+                    }
+
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (isGameOver) return;
+        if (e.Code == "Space" || e.Key == " ")
+        {
+            await TriggerHit();
+        }
+    }
+
+    private bool IsInsideSector => IsAngleInSector(currentAngle, sectorStartAngle, sectorArcDegrees, 0.0);
+
+    private bool IsAngleInSector(double angle, double start, double arcDegrees, double tolerance = 6.0)
+    {
+        // Normalize angle and start to [0, 360)
+        angle = (angle % 360.0 + 360.0) % 360.0;
+        start = (start % 360.0 + 360.0) % 360.0;
+
+        // Apply tolerance for reflex & input latency
+        double effectiveStart = (start - tolerance + 360.0) % 360.0;
+        double effectiveArc = arcDegrees + (2.0 * tolerance);
+
+        if (effectiveArc >= 360.0) return true;
+
+        double end = (effectiveStart + effectiveArc) % 360.0;
+
+        if (effectiveStart < end)
+        {
+            return angle >= effectiveStart && angle <= end;
+        }
+        else
+        {
+            return angle >= effectiveStart || angle <= end;
+        }
+    }
+
+    private double CalculateAccuracy(double angle, double start, double arcDegrees)
+    {
+        angle = (angle % 360.0 + 360.0) % 360.0;
+        start = (start % 360.0 + 360.0) % 360.0;
+        double center = (start + (arcDegrees / 2.0)) % 360.0;
+        double diff = Math.Abs(angle - center);
+        if (diff > 180.0) diff = 360.0 - diff;
+
+        double maxDist = Math.Max(arcDegrees / 2.0, 1.0);
+        double ratio = diff / maxDist;
+        return Math.Clamp(1.0 - (ratio * 0.4), 0.6, 1.0) * 100.0;
+    }
+
+    private async Task TriggerHit()
+    {
+        if (isGameOver) return;
+
+        // Check if current angle is inside target sector (with 8 deg tolerance for human reflex and event latency)
+        bool isHit = IsAngleInSector(currentAngle, sectorStartAngle, sectorArcDegrees, 8.0);
+        double accuracy = 0.0;
+
+        if (isHit)
+        {
+            accuracy = CalculateAccuracy(currentAngle, sectorStartAngle, sectorArcDegrees);
+            streak++;
+            bool hadStreakBonus = streak >= 3;
+
+            attemptResults.Add((true, accuracy, hadStreakBonus));
+            
+            // Audio Feedback
+            try
+            {
+                if (hadStreakBonus)
+                {
+                    await JS.InvokeVoidAsync("GameAudio.playStreak");
+                }
+                else
+                {
+                    await JS.InvokeVoidAsync("GameAudio.playHit", streak);
+                }
+            }
+            catch { }
+
+            TriggerFlash(true);
+        }
+        else
+        {
+            streak = 0;
+            attemptResults.Add((false, 0.0, false));
+            try
+            {
+                await JS.InvokeVoidAsync("GameAudio.playMiss");
+            }
+            catch { }
+
+            TriggerFlash(false);
+        }
+
+        completedCycles++;
+
+        // Shift target sector smoothly for the next attempt
+        var rng = new Random();
+        sectorStartAngle = (sectorStartAngle + rng.Next(75, 150)) % 360.0;
+
+        if (completedCycles >= maxCycles)
+        {
+            EndGame();
+        }
+    }
+
+    private void TriggerFlash(bool hit)
+    {
+        if (hit)
+        {
+            isFlashHit = true;
+            isFlashMiss = false;
+        }
+        else
+        {
+            isFlashMiss = true;
+            isFlashHit = false;
+        }
+
+        _ = Task.Delay(250).ContinueWith(_ =>
+        {
+            isFlashHit = false;
+            isFlashMiss = false;
+            InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private void EndGame()
+    {
+        cts?.Cancel();
+        isGameOver = true;
+
+        // Calculate precision score
+        int totalHits = attemptResults.Count(r => r.IsHit);
+        double totalAccuracy = attemptResults.Where(r => r.IsHit).Sum(r => r.Accuracy);
+        float precision = (float)(totalAccuracy / maxCycles);
+
+        // Grade determination:
+        // Perfect >= 85%
+        // Good 55-84%
+        // Fail < 55%
+        string grade = precision >= 85f ? "perfect" : (precision >= 55f ? "good" : "fail");
+
+        // Rewards calculation based on client gig (scaled for full 24-cycle shift)
+        double basePay = CurrentGig != null ? (CurrentGig.PayMin + CurrentGig.PayMax) / 2.0 : 250.0;
+        double payout = grade switch
+        {
+            "perfect" => basePay * 1.25,
+            "good" => basePay,
+            _ => basePay * 0.4
+        };
+
+        int xp = grade switch
+        {
+            "perfect" => 120,
+            "good" => 70,
+            _ => 25
+        };
+
+        int repDelta = grade switch
+        {
+            "perfect" => 6,
+            "good" => 1,
+            _ => -8
+        };
+
+        finalResult = new MinigameResult(precision, grade, xp, repDelta, payout);
+
+        try
+        {
+            JS.InvokeVoidAsync("GameAudio.playSuccess");
+        }
+        catch { }
+
+        StateHasChanged();
+    }
+
+    private async Task SubmitResult()
+    {
+        if (finalResult != null)
+        {
+            await OnComplete.InvokeAsync(finalResult);
+        }
+    }
+
+    private async Task AbortGame()
+    {
+        cts?.Cancel();
+        await OnCancel.InvokeAsync();
+    }
+
+    private string GetGradeStampClass() => $"stamp-{finalResult?.Grade.ToLower()}";
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        timer?.Dispose();
+    }
+}

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fi">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>From Gigs to Giants</title>
+    <meta name="description" content="Idle Clicker Business Tycoon game that combines neat and clean design with clever and hooking mini games that has a bigger purpose." />
+    <base href="/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            cyan: '#00f2fe',
+                            amber: '#f59e0b',
+                            emerald: '#10b981',
+                            purple: '#a855f7',
+                            rose: '#f43f5e',
+                            dark: '#080b12',
+                            panel: '#0f1523',
+                            panelAlt: '#141d30',
+                            border: '#1e293b',
+                            borderBright: '#334155'
+                        }
+                    },
+                    fontFamily: {
+                        heading: ['Chakra Petch', 'Rajdhani', 'sans-serif'],
+                        mono: ['Share Tech Mono', 'JetBrains Mono', 'monospace'],
+                        body: ['Rajdhani', '-apple-system', 'sans-serif']
+                    },
+                    boxShadow: {
+                        'neon-cyan': '0 0 20px rgba(0, 242, 254, 0.4)',
+                        'neon-amber': '0 0 20px rgba(245, 158, 11, 0.4)',
+                        'neon-emerald': '0 0 20px rgba(16, 185, 129, 0.4)',
+                        'neon-purple': '0 0 20px rgba(168, 85, 247, 0.4)',
+                        'control-inset': 'inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.05)'
+                    }
+                }
+            }
+        };
+    </script>
+    <script src="js/theme-manager.js"></script>
+    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="ClickerGame.Client.styles.css" rel="stylesheet" />
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    <script src="js/game-audio.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>

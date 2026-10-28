@@ -1,0 +1,230 @@
+# ==============================================================================
+# FROM GIGS TO GIANTS — ALKUPELIN KONFIGURAATIO (VAIHE 1)
+# ==============================================================================
+# Tyypit vaiheessa 1:
+#   - tier_0_clicker  : Yksinkertaisin urakkatyö, paina X kertaa Y sekunnissa
+#   - type_a_sector   : Valosignaali kiertää ympyrää, paina kun valo on sektorilla
+#   - type_b_wiring   : Johtojen kytkentäpuzzle (PE_FIRST-sääntö)
+# Tyyppi C (PLC-logiikka) tulee vasta myöhemmässä vaiheessa.
+# ==============================================================================
+
+weekly_loop:
+  days_per_cycle: 7
+  schedule_slots: ["MA", "TI", "KE", "TO", "PE", "LA", "SU"]
+
+  stamina_system:
+    base_max: 100
+    burnout_threshold: 0
+    burnout_penalty_days: 2
+    fixed_living_costs_eur_per_week: 150
+
+    actions:
+      work_regular:
+        stamina_cost: 20
+        pay_multiplier: 1.0
+        risk_multiplier: 1.0
+      work_overtime:
+        stamina_cost: 35
+        pay_multiplier: 1.75
+        risk_multiplier: 2.2
+      education_day:
+        stamina_cost: 10
+        pay_multiplier: 0.0
+      rest_free_home:
+        stamina_recovery: 40
+        cost_eur: 0
+      rest_premium_spa:
+        stamina_recovery: 100
+        cost_eur: 50
+        temp_buff:
+          precision_bonus: 0.10
+          duration_days: 2
+
+minigames:
+  precision_grading:
+    perfect: { min_score: 0.90, xp_mult: 1.5, rep_delta: 5 }
+    good:    { min_score: 0.60, xp_mult: 1.0, rep_delta: 0 }
+    fail:    { min_score: 0.00, xp_mult: 0.2, rep_delta: -10, blacklisted_days: 14 }
+
+  # --------------------------------------------------------------------------
+  # TIER 0: Clicker-urakkatyö — yksinkertaisin tapa ansaita
+  # Pelaaja painaa nappia tavoitemäärän verran aikarajan sisällä.
+  # Tasainen klikkausrytmi palkitaan tempo-bonuksella.
+  # --------------------------------------------------------------------------
+  tier_0_clicker:
+    id: "clicker_labor"
+    name: "Urakkatyö"
+    target_clicks_min: 500
+    target_clicks_max: 1000     # Skaalautuu Tier- ja viikoittaisen tason mukaan
+    time_limit_seconds: 60
+    tempo_bonus:
+      window_ms: 50             # ±50 ms toleranssi "tasaiselle" rytmille
+      bonus_multiplier: 1.20    # Tasainen tahti → +20 % palkka
+      sloppy_multiplier: 0.80   # Epätasainen → -20 %
+    stamina_impact:
+      low_stamina_threshold: 40
+      speed_reduction_factor: 0.85  # Väsyneenä klikkausindikaattori hidastuu
+
+  # --------------------------------------------------------------------------
+  # TYPE A: Valosignaali-sektori
+  # Valo pyörii ympyrää (tai liikkuu janalla). Pelaajalla on oma sektori.
+  # Paina nappia kun valo on sektorin alueella.
+  # Streak: 3 peräkkäistä osumaa = perfect, alle = good/fail.
+  # --------------------------------------------------------------------------
+  type_a_sector:
+    id: "sector_timing"
+    name: "Ajoitus ja kalibrointi"
+    rotation_speed_deg_per_sec: 180   # Yksi kierros 2 sekunnissa (perustaso)
+    sector_width_deg: 45              # Pelaajan sektori asteina (perus = 45°)
+    streak_required: 3                # Peräkkäiset osumat perfect-tulokseen
+    stamina_impact:
+      low_stamina_threshold: 40
+      sector_shrink_factor: 0.60      # Stamina < 40 → sektori kutistuu 60 %:iin
+      speed_increase_factor: 1.30     # + valo kiihtyy 30 %
+    tool_upgrades:
+      analog_multimeter:    { cost_eur: 0,   sector_expand: 1.0, speed_reduction: 0.0 }
+      digital_oscilloscope: { cost_eur: 350, sector_expand: 2.0, speed_reduction: 0.20 }
+
+  # --------------------------------------------------------------------------
+  # TYPE B: Kytkentä- ja reitityspuzzle
+  # Johdat kytketään oikeisiin liittimiin. PE aina ensimmäiseksi.
+  # --------------------------------------------------------------------------
+  type_b_wiring:
+    id: "wiring_puzzle"
+    name: "Kytkentä- ja reitityspuzzle"
+    tutorial_instance:
+      client_id: "peltipaja_oy"
+      wires: ["L1", "N", "PE", "S"]
+      safety_rule: "PE_FIRST"
+      short_circuit_penalty:
+        cost_eur: 40
+        time_loss_min: 30
+        precision_penalty: 0.40
+
+  # --------------------------------------------------------------------------
+  # TYPE D: Rytmi- ja sekvenssityö
+  # Nuotit (tai pulssimerkit) scrollaavat ruudulla. Pelaaja näpyttelee
+  # oikeaan tahtiin. Teemana esim. pumpun käynnistyssekvenssi tai
+  # kompressorin synkronointi — ei "musiikkia" vaan koneen rytmiä.
+  # Combo: 4+ peräkkäistä perfect-osumaa → x1.5 kerroin.
+  # --------------------------------------------------------------------------
+  type_d_rhythm:
+    id: "rhythm_sequence"
+    name: "Sekvenssin orkestrointi"
+    scroll_direction: "right_to_left"   # Nuotit liikkuvat oikealta vasemmalle
+    bpm_base: 80                        # Perustahti iskua/min (kasvaa vaikeustason myötä)
+    timing_window_ms: 150               # ±150 ms ostoikkuna (perfect-alue)
+    timing_window_good_ms: 300          # ±300 ms good-alue
+    combo_threshold: 4                  # Peräkkäistä perfect → combo aktivoituu
+    combo_multiplier: 1.50
+    audio:
+      hit_frequency_hz: 440.0           # A4 — lyhyt "klik" osumasta
+      miss_frequency_hz: 120.0          # Matala "bump" missistä
+      synthesis: "sine"                 # Syntetisoidaan Web Audio API:lla
+    stamina_impact:
+      low_stamina_threshold: 40
+      visual_noise_factor: 0.30         # Stamina < 40 → ruutuun kohinaa
+      bpm_variance_factor: 0.10         # Nuottien ajoitus hieman epäsäännöllinen
+    sequence_lengths:
+      tier_1: 16    # 16 iskua (helppo, perustason asiakas)
+      tier_2: 32    # 32 iskua (Kiinteistöhuolto)
+      tier_3: 64    # 64 iskua (Sementtitehdas)
+
+  # --------------------------------------------------------------------------
+  # TYPE E: Viandiagnoosi — Fault Tree -eliminointi
+  # Pelaaja näkee oireita, tekee testejä, karsii vaihtoehtoja.
+  # Vähemmän testejä käytetty = parempi precision.
+  # --------------------------------------------------------------------------
+  type_e_diagnosis:
+    id: "fault_diagnosis"
+    name: "Viandiagnoosi"
+    components_count: 8           # Mahdollisia vikakomponentteja
+    max_tests: 5                  # Testejä käytettävissä
+    precision_penalty_per_test: 0.15  # Jokainen ylimääräinen testi leikkaa
+    wrong_diagnosis_precision: 0.0    # Väärä diagnoosi = fail
+    stamina_impact:
+      low_stamina_threshold: 40
+      false_reading_chance: 0.15  # Stamina < 40 → 15% todennäköisyys harhaiselle lukemalle
+
+  # --------------------------------------------------------------------------
+  # TYPE F: Venttiilipaneeli — Flow Balancing
+  # Kolme venttiiliä, yksi tavoitepaine. Arvot ajautuvat ajan myötä.
+  # Precision = aika joka vietetään toleranssissa / kokonaisaika.
+  # --------------------------------------------------------------------------
+  type_f_valves:
+    id: "flow_balancing"
+    name: "Venttiilipaneeli"
+    valve_count: 3
+    target_pressure_bar: 3.5
+    tolerance_bar: 0.2            # ±0.2 bar hyväksytty alue
+    critical_error_bar: 1.5       # Ylitys → pumppu hajoaa, keikka päättyy
+    drift_rate_per_second: 0.008  # Venttiilit luisuvat itsestään
+    time_limit_seconds: 90
+    stamina_impact:
+      low_stamina_threshold: 40
+      drift_multiplier: 1.5       # Stamina < 40 → luisuminen 50% nopeampaa
+
+  # --------------------------------------------------------------------------
+  # TYPE G: Piirikaavio-vianhaku — Signal Trace / Binary Search
+  # Graafi-pohjainen: pelaaja koettaa solmuja löytääkseen katkenneen johdon.
+  # Optimaalinen ratkaisu = log2(n) koettimia (puolittaminen).
+  # --------------------------------------------------------------------------
+  type_g_circuit:
+    id: "circuit_trace"
+    name: "Piirikaavio-vianhaku"
+    node_count_range: [8, 24]     # Kaavion koko (kasvaa Tier-tason mukaan)
+    optimal_probes_formula: "log2(node_count)"
+    precision_penalty_per_extra_probe: 0.12
+    wrong_edge_precision: 0.20    # Väärä johto = lähes fail
+    stamina_impact:
+      low_stamina_threshold: 40
+      label_blur_chance: 0.20     # Stamina < 40 → solmutunnisteet sumeutuvat
+
+clients:
+
+  tier_1_peltipaja:
+    id: "peltipaja_oy"
+    name: "Peltipaja Oy"
+    req_rep: 0
+    gig_types: ["clicker_labor", "wiring_puzzle", "sector_timing"]
+    pay_range_eur: [80, 150]
+  tier_2_kiinteistohuolto:
+    id: "kaupungin_kiinteistohuolto"
+    name: "Kaupungin Kiinteistöhuolto"
+    req_rep: 25
+    req_certs: ["electrical_safety_1"]
+    gig_types: ["sector_timing", "rhythm_sequence", "fault_diagnosis", "flow_balancing"]
+    pay_range_eur: [250, 600]
+  tier_3_sementtitehdas:
+    id: "sementtitehdas_oy"
+    name: "Sementtitehdas Oy"
+    req_rep: 100
+    req_certs: ["plc_basics_1"]
+    gig_types: ["fault_diagnosis", "flow_balancing", "circuit_trace", "rhythm_sequence"]
+    pay_range_eur: [1200, 3500]
+
+education_tree:
+  electrical_safety_1:
+    id: "electrical_safety_1"
+    name: "Sähköturvallisuus & Tulityöt"
+    cost_eur: 250
+    duration_days: 1
+    req_level: 1
+  plc_basics_1:
+    id: "plc_basics_1"
+    name: "PLC-Automaation Perusteet"
+    cost_eur: 800
+    duration_days: 3
+    req_level: 3
+  robotics_1:
+    id: "robotics_1"
+    name: "Robotiikka & Anturitekniikka"
+    cost_eur: 2500
+    duration_days: 5
+    req_level: 7
+
+entrepreneurship_gate:
+  req_level: 10
+  req_personal_rep: 100
+  req_savings_eur: 5000
+  starting_van_cost_eur: 3500

@@ -1,0 +1,556 @@
+@namespace ClickerGame.Client.Components
+@using ClickerGame.Client.Models
+
+<div class="gig-market industrial-card">
+    <!-- Market Header -->
+    <div class="market-header">
+        <div class="header-left">
+            <span class="led-indicator led-amber"></span>
+            <div>
+                <h3 class="market-title font-heading">KEIKKAPÖRSSI // GIG MARKET</h3>
+                <span class="market-status font-mono">LIVE-TARJOUSKANAVA • @FilteredGigs.Count AVOINTA TILASTOA</span>
+            </div>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="market-filters">
+            <button class="filter-tab @(activeFilter == 0 ? "active" : "")" @onclick="() => SetFilter(0)">Kaikki</button>
+            <button class="filter-tab @(activeFilter == 1 ? "active" : "")" @onclick="() => SetFilter(1)">Tier 1</button>
+            <button class="filter-tab @(activeFilter == 2 ? "active" : "")" @onclick="() => SetFilter(2)">Tier 2</button>
+            <button class="filter-tab @(activeFilter == 3 ? "active" : "")" @onclick="() => SetFilter(3)">Tier 3</button>
+        </div>
+    </div>
+
+    <!-- Gigs List -->
+    <div class="gigs-scroll-container">
+        @if (FilteredGigs.Count == 0)
+        {
+            <div class="no-gigs-placeholder">
+                <span class="placeholder-icon">📡</span>
+                <p>Ei saatavilla olevia keikkoja valitulla suodattimella.</p>
+                <span class="sub-text">Uusia työmääräyksiä etsitään radioverkosta...</span>
+            </div>
+        }
+        else
+        {
+            <div class="gigs-grid">
+                @foreach (var gig in FilteredGigs)
+                {
+                    var isSelected = SelectedGig?.Id == gig.Id;
+                    var meetsRep = Player == null || Player.PersonalRep >= gig.RequiredRep;
+                    var missingCerts = GetMissingCerts(gig);
+                    var canAccept = meetsRep && missingCerts.Count == 0;
+
+                    <div class="gig-order-card @(isSelected ? "selected-card" : "") @(!canAccept ? "locked-card" : "")"
+                         @onclick="() => SelectGig(gig)">
+                        
+                        <!-- Top Order Bar with Punch Hole aesthetic -->
+                        <div class="card-ticket-header">
+                            <div class="punch-hole"></div>
+                            <div class="ticket-meta">
+                                <span class="order-number font-mono">#WO-@gig.Id.Substring(0, Math.Min(6, gig.Id.Length)).ToUpper()</span>
+                                <span class="expiry-tag font-mono">
+                                    ⏱ @GetExpiryText(gig.ExpiresAt)
+                                </span>
+                            </div>
+                            <span class="tier-badge tier-badge-@gig.Tier">Tier @gig.Tier</span>
+                        </div>
+
+                        <!-- Card Body -->
+                        <div class="card-main">
+                            <div class="client-title-row">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xl filter drop-shadow-[0_0_6px_rgba(255,255,255,0.4)]">@GetVenueIcon(gig.ClientName)</span>
+                                    <h4 class="client-name font-bold text-white">@gig.ClientName</h4>
+                                </div>
+                                <div class="duration-badge font-mono">
+                                    @(gig.DurationDays == 1 ? "1 päivä" : $"{gig.DurationDays} päivää")
+                                </div>
+                            </div>
+
+                            <div class="gig-task-type font-mono">
+                                @if (gig.MinigameType == "wiring")
+                                {
+                                    <span class="badge-task badge-wiring">🔌 KESKUSKYTKENTÄ</span>
+                                }
+                                else if (gig.MinigameType == "troubleshooting")
+                                {
+                                    <span class="badge-task badge-trouble">🔍 VIANETSINTÄ</span>
+                                }
+                                else
+                                {
+                                    <span class="badge-task badge-timing">⚡ VAIHETAHDISTUS</span>
+                                }
+                                @if (!string.IsNullOrEmpty(gig.Description))
+                                {
+                                    <span class="gig-desc-text">@gig.Description</span>
+                                }
+                            </div>
+
+                            <!-- Payout Display -->
+                            <div class="pay-box font-mono">
+                                <span class="pay-label">ARVIOITU PALKKIO:</span>
+                                <span class="pay-amount">@gig.PayMin.ToString("0") – @gig.PayMax.ToString("0") €</span>
+                            </div>
+
+                            <!-- Requirements Checklist -->
+                            <div class="requirements-box">
+                                <span class="req-title">PÄTEVYYSVAATIMUKSET:</span>
+                                <div class="req-list">
+                                    <!-- Rep Req -->
+                                    <div class="req-item @(meetsRep ? "req-ok" : "req-missing") font-mono">
+                                        <span class="req-symbol">@(meetsRep ? "✔" : "✖")</span>
+                                        <span>Maine @gig.RequiredRep+ (Sinulla: @(Player?.PersonalRep ?? 0))</span>
+                                    </div>
+
+                                    <!-- Certs Req -->
+                                    @if (gig.RequiredCerts.Count == 0)
+                                    {
+                                        <div class="req-item req-ok font-mono">
+                                            <span class="req-symbol">✔</span>
+                                            <span>Ei vaadittuja sertifikaatteja</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var cert in gig.RequiredCerts)
+                                        {
+                                            var hasCert = Player?.Certifications.Contains(cert) ?? false;
+                                            <div class="req-item @(hasCert ? "req-ok" : "req-missing") font-mono">
+                                                <span class="req-symbol">@(hasCert ? "✔" : "🔒")</span>
+                                                <span>@GetCertDisplayName(cert)</span>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card Footer / Actions -->
+                        <div class="card-footer">
+                            @if (!canAccept)
+                            {
+                                <div class="locked-banner font-mono">
+                                    🔒 VAATIMUKSET EIVÄT TÄYTY
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="btn-industrial @(isSelected ? "btn-industrial-cyan" : "btn-industrial-amber") btn-assign"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="() => SelectGig(gig)">
+                                    @(isSelected ? "✓ VALITTU • SIJOITA KALENTERIIN" : "+ VALITSE KEIKKA")
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+.gig-market {
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem;
+    gap: 1rem;
+}
+
+.market-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.85rem;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.market-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0;
+    color: #ffffff;
+    letter-spacing: 0.05em;
+}
+
+.market-status {
+    font-size: 0.72rem;
+    color: var(--amber-primary);
+}
+
+.market-filters {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.filter-tab {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-family: var(--font-heading);
+    font-size: 0.75rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.filter-tab.active {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: var(--amber-primary);
+    color: var(--amber-primary);
+}
+
+.gigs-scroll-container {
+    max-height: 480px;
+    overflow-y: auto;
+    padding-right: 0.3rem;
+}
+
+.gigs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 0.85rem;
+}
+
+/* Industrial Order Slip Card */
+.gig-order-card {
+    background: #141926;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.gig-order-card:hover {
+    border-color: var(--border-highlight);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.selected-card {
+    border-color: var(--cyan-primary) !important;
+    box-shadow: 0 0 16px rgba(0, 212, 255, 0.3) !important;
+    background: #172133;
+}
+
+.locked-card {
+    opacity: 0.65;
+}
+
+.locked-card:hover {
+    opacity: 0.85;
+}
+
+/* Header strip */
+.card-ticket-header {
+    background: #0d121c;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+}
+
+.punch-hole {
+    position: absolute;
+    top: 50%;
+    left: -6px;
+    transform: translateY(-50%);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--bg-dark);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+}
+
+.ticket-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-left: 0.5rem;
+}
+
+.order-number {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.expiry-tag {
+    font-size: 0.65rem;
+    color: #f59e0b;
+}
+
+/* Card Main */
+.card-main {
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    flex: 1;
+}
+
+.client-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.client-name {
+    font-size: 1.02rem;
+    font-weight: 700;
+    margin: 0;
+    color: #ffffff;
+    line-height: 1.25;
+}
+
+.duration-badge {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-color);
+    padding: 2px 6px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    border-radius: 2px;
+    white-space: nowrap;
+}
+
+.gig-task-type {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.badge-task {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: inline-block;
+    align-self: flex-start;
+}
+
+.badge-wiring {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid #3b82f6;
+}
+
+.badge-trouble {
+    background: rgba(234, 179, 8, 0.15);
+    color: #facc15;
+    border: 1px solid #eab308;
+}
+
+.badge-timing {
+    background: rgba(6, 182, 212, 0.15);
+    color: #22d3ee;
+    border: 1px solid #06b6d4;
+}
+
+.gig-desc-text {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    line-height: 1.3;
+}
+
+/* Pay Box */
+.pay-box {
+    background: #0c1018;
+    border-left: 3px solid #22c55e;
+    padding: 0.4rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-radius: 0 2px 2px 0;
+}
+
+.pay-label {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+}
+
+.pay-amount {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #4ade80;
+}
+
+/* Requirements */
+.requirements-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    background: rgba(0, 0, 0, 0.15);
+    padding: 0.45rem 0.6rem;
+    border-radius: 2px;
+}
+
+.req-title {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+.req-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.req-item {
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.req-ok {
+    color: #94a3b8;
+}
+
+.req-ok .req-symbol {
+    color: #22c55e;
+    font-weight: 700;
+}
+
+.req-missing {
+    color: #ef4444;
+}
+
+.req-missing .req-symbol {
+    color: #ef4444;
+    font-weight: 700;
+}
+
+/* Card Footer */
+.card-footer {
+    padding: 0.6rem 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.btn-assign {
+    width: 100%;
+    font-size: 0.78rem;
+    padding: 0.45rem;
+}
+
+.locked-banner {
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--danger-red);
+    padding: 0.35rem;
+    border: 1px dashed rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.no-gigs-placeholder {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.placeholder-icon {
+    font-size: 2rem;
+    color: var(--amber-primary);
+}
+
+.sub-text {
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+}
+</style>
+
+@code {
+    [Parameter, EditorRequired]
+    public List<Gig> Gigs { get; set; } = new();
+
+    [Parameter]
+    public PlayerState? Player { get; set; }
+
+    [Parameter]
+    public Gig? SelectedGig { get; set; }
+
+    [Parameter]
+    public EventCallback<Gig> OnSelectGig { get; set; }
+
+    private int activeFilter = 0;
+
+    private List<Gig> FilteredGigs => activeFilter switch
+    {
+        1 => Gigs.Where(g => g.Tier == 1).ToList(),
+        2 => Gigs.Where(g => g.Tier == 2).ToList(),
+        3 => Gigs.Where(g => g.Tier == 3).ToList(),
+        _ => Gigs
+    };
+
+    private void SetFilter(int tier)
+    {
+        activeFilter = tier;
+    }
+
+    private async Task SelectGig(Gig gig)
+    {
+        await OnSelectGig.InvokeAsync(gig);
+    }
+
+    private List<string> GetMissingCerts(Gig gig)
+    {
+        if (Player == null) return gig.RequiredCerts;
+        return gig.RequiredCerts.Where(c => !Player.Certifications.Contains(c)).ToList();
+    }
+
+    private string GetCertDisplayName(string certKey) => certKey switch
+    {
+        "electrical_safety_1" => "Sähköturvallisuus SFS 6002",
+        "plc_basics" => "PLC-Automaation perusteet",
+        "hot_works" => "Tulityökortti",
+        "robotics_1" => "Robotiikka & Kenttäväylät",
+        _ => certKey
+    };
+
+    private string GetExpiryText(string expiresAt)
+    {
+        if (DateTime.TryParse(expiresAt, out var dt))
+        {
+            var diff = dt - DateTime.Now;
+            if (diff.TotalDays >= 1) return $"Vanhenee {(int)diff.TotalDays} pv";
+            if (diff.TotalHours >= 1) return $"Vanhenee {(int)diff.TotalHours} h";
+            return "Vanhenee pian";
+        }
+        return "Voimassa 2 pv";
+    }
+
+    private string GetVenueIcon(string clientName)
+    {
+        if (clientName.Contains("Yökerho") || clientName.Contains("Klubi")) return "🪩";
+        if (clientName.Contains("Kahvila") || clientName.Contains("Bistro")) return "☕";
+        if (clientName.Contains("Arcadia") || clientName.Contains("Pelihalli")) return "🕹️";
+        if (clientName.Contains("Skybar") || clientName.Contains("Kattoterassi")) return "☀️";
+        if (clientName.Contains("Sairaala")) return "🏥";
+        if (clientName.Contains("Panimo")) return "🍻";
+        if (clientName.Contains("Pelti")) return "🏭";
+        if (clientName.Contains("Putki")) return "🚰";
+        return "⚡";
+    }
+}

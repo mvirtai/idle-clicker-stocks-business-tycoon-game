@@ -1,0 +1,1622 @@
+@namespace ClickerGame.Client.Pages.Minigame
+@using ClickerGame.Client.Models
+@inject IJSRuntime JS
+
+<div class="troubleshooting-game-screen" tabindex="0" @ref="gameContainerRef" @onkeydown="HandleKeyDown">
+    <!-- Top HUD Bar -->
+    <header class="game-hud-bar">
+        <div class="hud-left">
+            <span class="hud-tag font-mono">VIANETSINTÄ // NOPEA HUOLTOKEIKKA</span>
+            <h2 class="hud-title font-heading">
+                @(CurrentGig != null ? $"{CurrentGig.ClientName} // VIANETSINTÄ" : "AUTOMAATIOLINJAN VIANETSINTÄ")
+            </h2>
+        </div>
+
+        <div class="hud-center">
+            <div class="hud-pill font-mono">
+                <span class="label">STAMINA:</span>
+                <span class="val text-cyan">@Math.Round(PlayerStamina, 0)%</span>
+            </div>
+            <div class="hud-pill font-mono">
+                <span class="label">MITTAUKSET:</span>
+                <span class="val text-amber">@measurementsTaken kpl</span>
+            </div>
+            <div class="hud-pill font-mono">
+                <span class="label">TILANNE:</span>
+                <span class="val @(isSolved ? "text-green" : "text-danger")">
+                    @(isSolved ? "✔ VIKA KORJATTU" : "⚠ HÄLYTYS PÄÄLLÄ")
+                </span>
+            </div>
+        </div>
+
+        <div class="hud-right">
+            <button class="btn-industrial btn-sm btn-tutorial-trigger" @onclick="OpenTutorial">❓ OPAS</button>
+            <button class="btn-industrial btn-sm btn-abort" @onclick="AbortGame">✕ KESKEYTÄ</button>
+        </div>
+    </header>
+
+    <!-- Keyboard Hotkey Shortcut Banner (Näppäinohjaus) -->
+    <div class="quick-hotkey-strip font-mono">
+        <span class="hotkey-tip-title">⚡ NÄPPÄINOIKOTIET:</span>
+        <span class="hotkey-pill" @onclick="AutofindFault" title="Automaattinen nopea diagnostiikka"><kbd>SPACE</kbd> = Nopea diagnoosi</span>
+        <span class="hotkey-pill" @onclick='() => AttemptFix("FUSE")' title="Vaihda sulake"><kbd>1</kbd> Sulake F1</span>
+        <span class="hotkey-pill" @onclick='() => AttemptFix("ESTOP")' title="Vapauta Hätä-seis"><kbd>2</kbd> Hätä-seis S0</span>
+        <span class="hotkey-pill" @onclick='() => AttemptFix("THERMAL")' title="Kuittaa lämpörele"><kbd>3</kbd> Lämpörele F2</span>
+        <span class="hotkey-pill" @onclick='() => AttemptFix("PSU")' title="Vaihda teholähde"><kbd>4</kbd> Teholähde</span>
+        <span class="hotkey-pill" @onclick='() => AttemptFix("CONTACTOR")' title="Vaihda kontaktori"><kbd>5</kbd> Kontaktori K1</span>
+    </div>
+
+    <!-- Paused Tutorial Modal Overlay -->
+    @if (showTutorial)
+    {
+        <div class="tutorial-modal-backdrop">
+            <div class="tutorial-modal-card industrial-card">
+                <div class="tutorial-header">
+                    <div class="tutorial-badge font-mono">PIKAOPAS // @(tutorialStep + 1) / 2</div>
+                    <h3 class="tutorial-title font-heading">@GetTutorialStepTitle(tutorialStep)</h3>
+                    <button class="btn-close-tut" @onclick="CloseTutorial" title="Sulje tutoriaali">✕</button>
+                </div>
+
+                <div class="tutorial-step-tabs font-mono">
+                    <button class="step-tab @(tutorialStep == 0 ? "tab-active" : "")" @onclick="() => tutorialStep = 0">
+                        1. HELPPO VIANHAKU
+                    </button>
+                    <button class="step-tab @(tutorialStep == 1 ? "tab-active" : "")" @onclick="() => tutorialStep = 1">
+                        2. KORJAUS & NÄPPÄIMET
+                    </button>
+                </div>
+
+                <div class="tutorial-content-body font-mono">
+                    @if (tutorialStep == 0)
+                    {
+                        <div class="tut-slide">
+                            <div class="tut-fun-banner">
+                                <span class="fun-emoji">🔍</span>
+                                <div class="fun-text">
+                                    <strong>Rentoudu! Sinun ei tarvitse laskea ohmeja tai jännitteitä.</strong>
+                                    <span>Lue asiakkaan ilmoitus tai paina <kbd>SPACE</kbd> ajaaksesi nopean diagnoosin!</span>
+                                </div>
+                            </div>
+
+                            <div class="tut-instruction-split">
+                                <div class="tut-box tut-box-visual">
+                                    <h4 class="box-title text-cyan">TAPA 1: NOPEA DIAGNOOSI (PIKA)</h4>
+                                    <p class="box-tip">
+                                        Paina <kbd class="kbd-lg">SPACE</kbd>! Peli testaa automaattisesti piirin ja kertoo suoraan mikä osa on vialla.
+                                    </p>
+                                    <div class="easy-badge">⚡ Paina vain näppäimiä 1, 2, 3, 4 tai 5 korjataksesi!</div>
+                                </div>
+
+                                <div class="tut-box tut-box-button">
+                                    <h4 class="box-title text-green">TAPA 2: KLIKKAA KAAVIOSTA</h4>
+                                    <p class="box-tip">
+                                        Klikkaa kaavion testipisteitä (TP1, TP2, TP3...) ja katso yleismittarista missä jännite katkeaa.
+                                    </p>
+                                    <div class="easy-badge">👆 Kivaa mittailua ilman kiirettä!</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="tut-slide">
+                            <p class="tut-intro-text">
+                                Korjaa vika valitsemalla toimenpide alta tai painamalla numeroa:
+                            </p>
+
+                            <div class="fix-examples-list">
+                                <div class="fix-example-item">
+                                    <span class="hotkey-pill" style="margin:0;"><kbd>1</kbd></span>
+                                    <span class="fix-tag text-amber">Sulake F1:</span>
+                                    <span>Moottori ei pyöri, pääsyötön sulake palanut</span>
+                                </div>
+                                <div class="fix-example-item">
+                                    <span class="hotkey-pill" style="margin:0;"><kbd>2</kbd></span>
+                                    <span class="fix-tag text-cyan">Hätä-Seis S0:</span>
+                                    <span>Joku painoi punaista nappia, vapauta kääntämällä</span>
+                                </div>
+                                <div class="fix-example-item">
+                                    <span class="hotkey-pill" style="margin:0;"><kbd>3</kbd></span>
+                                    <span class="fix-tag text-green">Lämpörele F2:</span>
+                                    <span>Pumppu kuumeni ja pysähtyi, kuittaa (Reset)</span>
+                                </div>
+                                <div class="fix-example-item">
+                                    <span class="hotkey-pill" style="margin:0;"><kbd>4</kbd></span>
+                                    <span class="fix-tag text-cyan">Teholähde:</span>
+                                    <span>24V ohjaussähkö pimeänä, vaihda uusi</span>
+                                </div>
+                                <div class="fix-example-item">
+                                    <span class="hotkey-pill" style="margin:0;"><kbd>5</kbd></span>
+                                    <span class="fix-tag text-amber">Kontaktori K1:</span>
+                                    <span>Ohjauskela rikki, kontaktori ei vedä päälle</span>
+                                </div>
+                            </div>
+
+                            <div class="ready-cta-box" style="margin-top: 0.8rem;">
+                                <span class="ready-title">VALMIINA HUOLTAJANA?</span>
+                                <span class="ready-sub">Paina <kbd>SPACE</kbd> ja aloita vianetsintä!</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="tutorial-footer">
+                    <div class="tut-foot-left">
+                        @if (tutorialStep > 0)
+                        {
+                            <button class="btn-industrial btn-sm" @onclick="PrevTutorialStep">
+                                ◀ EDELLINEN
+                            </button>
+                        }
+                    </div>
+
+                    <div class="tut-foot-dots">
+                        @for (int s = 0; s < 2; s++)
+                        {
+                            var stepIdx = s;
+                            <span class="tut-dot @(tutorialStep == stepIdx ? "dot-active" : "")" 
+                                  @onclick="() => tutorialStep = stepIdx"></span>
+                        }
+                    </div>
+
+                    <div class="tut-foot-right">
+                        @if (tutorialStep < 1)
+                        {
+                            <button class="btn-industrial btn-industrial-cyan btn-sm" @onclick="NextTutorialStep">
+                                SEURAAVA SIVU ▶
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn-industrial btn-industrial-cyan btn-lg font-bold" @onclick="CloseTutorial">
+                                🎮 ALOITA KEIKKA (SPACE)!
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Main Workspace -->
+    <main class="troubleshoot-stage">
+        <!-- Left: Digital Multimeter (Fluke-tyylinen yleismittari) -->
+        <section class="multimeter-panel industrial-card">
+            <div class="multimeter-body">
+                <div class="multimeter-brand font-heading">NORDIC METEX // PRO-6000</div>
+                <div class="multimeter-sub font-mono">TRUE RMS CAT IV 600V</div>
+
+                <!-- Digital LCD Screen -->
+                <div class="dmm-screen font-mono">
+                    <div class="screen-header">
+                        <span class="screen-mode">@currentMode</span>
+                        <span class="screen-hold">AUTO</span>
+                    </div>
+                    <div class="screen-value">
+                        @displayValue
+                    </div>
+                    <div class="screen-unit">
+                        @displayUnit
+                    </div>
+                </div>
+
+                <!-- Rotary Dial Mode Selector -->
+                <div class="rotary-dial-container">
+                    <span class="dial-label dial-off @(currentMode == "OFF" ? "active" : "")">OFF</span>
+                    <span class="dial-label dial-vac @(currentMode == "V AC" ? "active" : "")">V~</span>
+                    <span class="dial-label dial-vdc @(currentMode == "V DC" ? "active" : "")">V⎓</span>
+                    <span class="dial-label dial-ohm @(currentMode == "OHM" ? "active" : "")">Ω</span>
+                    <span class="dial-label dial-cont @(currentMode == "CONT" ? "active" : "")">🔊</span>
+
+                    <div class="rotary-knob @GetKnobClass()" @onclick="CycleMode">
+                        <div class="knob-marker"></div>
+                    </div>
+                </div>
+
+                <!-- Probe Leads Jack -->
+                <div class="probe-jacks">
+                    <div class="jack-col">
+                        <div class="jack jack-com"></div>
+                        <span class="jack-label font-mono">COM (MUSTA)</span>
+                    </div>
+                    <div class="jack-col">
+                        <div class="jack jack-v"></div>
+                        <span class="jack-label font-mono">V / Ω (PUN)</span>
+                    </div>
+                </div>
+
+                <div class="probes-status font-mono">
+                    <div>PUNAINEN (+): <span class="text-amber">@(redProbePoint ?? "IRTI")</span></div>
+                    <div>MUSTA (COM): <span class="text-cyan">@(blackProbePoint ?? "IRTI")</span></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Center: Interactive Circuit Schematic & Test Points (Kytkentäkaavio ja mittapisteet) -->
+        <section class="schematic-view industrial-card">
+            <div class="schematic-header">
+                <div>
+                    <span class="led-indicator @(isSolved ? "led-green" : "led-red")"></span>
+                    <span class="font-heading title">VIANMÄÄRITYSKAAVIO #PUMP-AUTO</span>
+                </div>
+                <div class="fault-brief font-mono">
+                    VIKAILMOITUS: <span class="text-amber font-bold">"@currentFault.CustomerReport"</span>
+                </div>
+            </div>
+
+            <!-- Quick Guidance Banner -->
+            <div class="troubleshoot-guide-banner font-mono">
+                <span class="guide-icon">💡</span>
+                <span class="guide-text">
+                    <strong>OHJE:</strong> Klikkaa vasemmalta mittarin mustaa kiekkoa vaihtaaksesi mittaustilaa (V~ / V⎓ / Ω). Klikkaa kaaviosta testipisteitä (esim. musta mittapää <strong>PE-MAA</strong> ja punainen mittapää <strong>TP1, TP2...</strong>). Paikanna katkos ja valitse alta oikea korjaustoimenpide!
+                </span>
+            </div>
+
+            <!-- Interactive Schematic Canvas -->
+            <div class="schematic-circuit font-mono">
+                <!-- Circuit Row 1: 400V Päävirtapiiri -->
+                <div class="circuit-section">
+                    <span class="section-title">400V VAIHTOVIRTASYÖTTÖ JA MOOTTORIPIIRI</span>
+                    <div class="circuit-chain">
+                        <!-- Node 1: Syöttö TP1 -->
+                        <div class="circuit-node">
+                            <button class="test-point-btn @GetTpClass("TP1")" @onclick='() => ProbePoint("TP1")'>TP1</button>
+                            <span class="node-label">SYÖTTÖ 400V</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Component: Pääkytkin Q0 -->
+                        <div class="circuit-component">
+                            <span class="comp-icon">⏻</span>
+                            <span class="comp-name">PÄÄKYTKIN Q0</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Node 2: TP2 -->
+                        <div class="circuit-node">
+                            <button class="test-point-btn @GetTpClass("TP2")" @onclick='() => ProbePoint("TP2")'>TP2</button>
+                            <span class="node-label">Q0 LÄHTÖ</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Component: Sulakkeet F1 -->
+                        <div class="circuit-component @(currentFault.FaultType == "FUSE" ? "comp-faulty" : "")">
+                            <span class="comp-icon">▯</span>
+                            <span class="comp-name">SULAKKEET F1</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Node 3: TP3 -->
+                        <div class="circuit-node">
+                            <button class="test-point-btn @GetTpClass("TP3")" @onclick='() => ProbePoint("TP3")'>TP3</button>
+                            <span class="node-label">F1 JÄLKEEN</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Component: Kontaktori K1 -->
+                        <div class="circuit-component @(currentFault.FaultType == "CONTACTOR" ? "comp-faulty" : "")">
+                            <span class="comp-icon">⚯</span>
+                            <span class="comp-name">KONTAKTORI K1</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Node 4: TP4 -->
+                        <div class="circuit-node">
+                            <button class="test-point-btn @GetTpClass("TP4")" @onclick='() => ProbePoint("TP4")'>TP4</button>
+                            <span class="node-label">MOOTTORI M1</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Circuit Row 2: 24V DC Ohjausvirtapiiri -->
+                <div class="circuit-section">
+                    <span class="section-title">24V DC OHJAUS- JA TURVAVIRTAPIIRI</span>
+                    <div class="circuit-chain">
+                        <!-- Node 5: 24V Teholähde TP5 -->
+                        <div class="circuit-node">
+                            <button class="test-point-btn @GetTpClass("TP5")" @onclick='() => ProbePoint("TP5")'>TP5</button>
+                            <span class="node-label">+24V SYÖTTÖ</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Component: Hätä-Seis S0 -->
+                        <div class="circuit-component @(currentFault.FaultType == "ESTOP" ? "comp-faulty" : "")">
+                            <span class="comp-icon">🛑</span>
+                            <span class="comp-name">HÄTÄ-SEIS S0</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Node 6: TP6 -->
+                        <div class="circuit-node">
+                            <button class="test-point-btn @GetTpClass("TP6")" @onclick='() => ProbePoint("TP6")'>TP6</button>
+                            <span class="node-label">S0 LÄHTÖ</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Component: Lämpörele F2 (95-96) -->
+                        <div class="circuit-component @(currentFault.FaultType == "THERMAL" ? "comp-faulty" : "")">
+                            <span class="comp-icon">⚡</span>
+                            <span class="comp-name">LÄMPÖRELE F2</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Node 7: TP7 -->
+                        <div class="circuit-node">
+                            <button class="test-point-btn @GetTpClass("TP7")" @onclick='() => ProbePoint("TP7")'>TP7</button>
+                            <span class="node-label">F2 LÄHTÖ</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Component: Käynnistys S1 & Kontaktori Kela -->
+                        <div class="circuit-component">
+                            <span class="comp-icon">🎛</span>
+                            <span class="comp-name">KELA K1 (A1-A2)</span>
+                        </div>
+                        <div class="circuit-line"></div>
+
+                        <!-- Node 8: 0V Nolla TP8 -->
+                        <div class="circuit-node">
+                            <button class="test-point-btn @GetTpClass("TP8")" @onclick='() => ProbePoint("TP8")'>TP8</button>
+                            <span class="node-label">0V / GND</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ground bar -->
+                <div class="ground-bar">
+                    <button class="test-point-btn term-pe @GetTpClass("GND")" @onclick='() => ProbePoint("GND")'>PE-MAA</button>
+                    <span class="font-mono text-muted">SUOJAMAA (POTENTIAALINTASAUS)</span>
+                </div>
+            </div>
+
+            <!-- Action / Diagnostic Repair Panel -->
+            <div class="repair-decision-box font-mono">
+                <div class="decision-header">
+                    <span class="title font-heading">KORJAUSTOIMENPIDE (VALITSE VIAN MUKAAN):</span>
+                    <span class="hint text-muted">Mittaa ensin yleismittarilla, varmista katkoskohta ja tee korjaus:</span>
+                </div>
+
+                <div class="fix-options">
+                    <button class="btn-industrial btn-sm" @onclick='() => AttemptFix("FUSE")'>
+                        🔧 Vaihda palanut sulake F1
+                    </button>
+                    <button class="btn-industrial btn-sm" @onclick='() => AttemptFix("ESTOP")'>
+                        🛑 Vapauta jumittunut hätä-seis S0
+                    </button>
+                    <button class="btn-industrial btn-sm" @onclick='() => AttemptFix("THERMAL")'>
+                        ⚡ Kuittaa lauennut lämpörele F2
+                    </button>
+                    <button class="btn-industrial btn-sm" @onclick='() => AttemptFix("PSU")'>
+                        🔌 Vaihda viallinen 24VDC teholähde
+                    </button>
+                    <button class="btn-industrial btn-sm" @onclick='() => AttemptFix("CONTACTOR")'>
+                        ⚙ Vaihda viallinen kontaktori K1
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(actionFeedback))
+                {
+                    <div class="action-feedback font-mono @(isSolved ? "text-green" : "text-danger")">
+                        @actionFeedback
+                    </div>
+                }
+            </div>
+        </section>
+    </main>
+
+    <!-- Loppupöytäkirja Modal -->
+    @if (isGameOver && finalResult != null)
+    {
+        <div class="result-modal-backdrop">
+            <div class="industrial-card result-report-card">
+                <div class="report-header">
+                    <div class="stamp-badge stamp-@finalResult.Grade.ToLower()">@finalResult.Grade.ToUpper()</div>
+                    <h3 class="report-title font-heading">VIANHAKU- JA HUOLTOPÖYTÄKIRJA</h3>
+                    <span class="report-sub font-mono">DIAGNOSTIIKKA JA KORJAUSTOIMENPITEET SUORITETTU</span>
+                </div>
+
+                <div class="report-body font-mono">
+                    <div class="report-stat-row">
+                        <span>LÖYDETTY VIKA:</span>
+                        <span class="text-cyan font-bold">@currentFault.FaultTitle</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>MITTAUKSIA KÄYTETTY:</span>
+                        <span>@measurementsTaken kpl</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>TURHAT VARAOSAVAIHDOT:</span>
+                        <span>@wrongFixCount kpl</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>URAKKAPALKKIO:</span>
+                        <span class="text-green font-bold">+@finalResult.PayEur.ToString("0") €</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>KOKEMUSPISTEET:</span>
+                        <span class="text-amber font-bold">+@finalResult.XpGained XP</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>MAINEVAIKUTUS:</span>
+                        <span class="font-bold @(finalResult.RepDelta >= 0 ? "text-green" : "text-danger")">
+                            @(finalResult.RepDelta >= 0 ? $"+{finalResult.RepDelta}" : finalResult.RepDelta.ToString()) MAINETTA
+                        </span>
+                    </div>
+                </div>
+
+                <div class="report-actions">
+                    <button class="btn-industrial btn-industrial-cyan btn-lg" @onclick="SubmitResult">
+                        ✔ HYVÄKSY JA PALAA KALENTERIIN
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+.troubleshooting-game-screen {
+    position: fixed;
+    inset: 0;
+    background-color: #080b11;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+}
+
+.troubleshoot-stage {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    overflow: hidden;
+}
+
+/* Digital Multimeter Body */
+.multimeter-panel {
+    background: #eab308;
+    border: 4px solid #ca8a04;
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.7), inset 0 2px 0 rgba(255, 255, 255, 0.4);
+    display: flex;
+    flex-direction: column;
+}
+
+.multimeter-body {
+    background: #1e293b;
+    border-radius: 10px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+}
+
+.multimeter-brand {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #f1f5f9;
+    letter-spacing: 0.08em;
+}
+
+.multimeter-sub {
+    font-size: 0.55rem;
+    color: #94a3b8;
+    margin-top: -0.6rem;
+}
+
+/* DMM Screen */
+.dmm-screen {
+    width: 100%;
+    height: 90px;
+    background: #a3e635;
+    border: 3px inset #65a30d;
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+}
+
+.screen-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: #14532d;
+    font-weight: 700;
+}
+
+.screen-value {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #052e16;
+    text-align: right;
+    line-height: 1;
+    letter-spacing: -0.05em;
+}
+
+.screen-unit {
+    font-size: 0.75rem;
+    color: #14532d;
+    text-align: right;
+    font-weight: 700;
+}
+
+/* Rotary Dial */
+.rotary-dial-container {
+    width: 130px;
+    height: 130px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dial-label {
+    position: absolute;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #64748b;
+    font-family: var(--font-mono);
+}
+
+.dial-label.active {
+    color: #f59e0b;
+    text-shadow: 0 0 8px #f59e0b;
+}
+
+.dial-off { top: 0px; left: 52px; }
+.dial-vac { top: 22px; right: 8px; }
+.dial-vdc { bottom: 22px; right: 8px; }
+.dial-ohm { bottom: 0px; left: 52px; }
+.dial-cont { bottom: 22px; left: 8px; }
+
+.rotary-knob {
+    width: 70px;
+    height: 70px;
+    background: radial-gradient(circle, #334155 0%, #0f172a 100%);
+    border: 3px solid #64748b;
+    border-radius: 50%;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.2s ease;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+}
+
+.knob-marker {
+    position: absolute;
+    top: 4px;
+    left: 31px;
+    width: 4px;
+    height: 18px;
+    background: #ef4444;
+    border-radius: 2px;
+}
+
+.knob-pos-off { transform: rotate(0deg); }
+.knob-pos-vac { transform: rotate(72deg); }
+.knob-pos-vdc { transform: rotate(144deg); }
+.knob-pos-ohm { transform: rotate(216deg); }
+.knob-pos-cont { transform: rotate(288deg); }
+
+/* Probe Jacks */
+.probe-jacks {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.jack-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.jack {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 3px solid #475569;
+}
+
+.jack-com { background: #000000; }
+.jack-v { background: #dc2626; }
+
+.jack-label {
+    font-size: 0.55rem;
+    color: #94a3b8;
+}
+
+.probes-status {
+    width: 100%;
+    background: #090d15;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+/* Schematic Section */
+.schematic-view {
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    background: #0c111c;
+}
+
+.troubleshoot-guide-banner {
+    background: rgba(0, 212, 255, 0.08);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 4px;
+    padding: 0.6rem 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.72rem;
+    color: #e2e8f0;
+    line-height: 1.4;
+}
+
+.troubleshoot-guide-banner .guide-icon {
+    font-size: 1.2rem;
+}
+
+.schematic-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.6rem;
+}
+
+.schematic-header .title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-left: 0.4rem;
+}
+
+.fault-brief {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.schematic-circuit {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    background: #070a12;
+    border: 2px solid #1c2638;
+    border-radius: 6px;
+    padding: 1.25rem;
+    flex: 1;
+}
+
+.circuit-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.section-title {
+    font-size: 0.68rem;
+    color: var(--amber-primary);
+    font-weight: 700;
+}
+
+.circuit-chain {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0.5rem 0;
+}
+
+.circuit-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.test-point-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #1e293b;
+    border: 2px solid #475569;
+    color: #f1f5f9;
+    font-size: 0.75rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.test-point-btn:hover {
+    border-color: var(--cyan-primary);
+    background: #0284c7;
+    transform: scale(1.1);
+}
+
+.test-point-btn.probe-red {
+    background: #dc2626 !important;
+    border-color: #ffffff !important;
+    box-shadow: 0 0 12px #dc2626 !important;
+}
+
+.test-point-btn.probe-black {
+    background: #0284c7 !important;
+    border-color: #ffffff !important;
+    box-shadow: 0 0 12px #0284c7 !important;
+}
+
+.node-label {
+    font-size: 0.55rem;
+    color: #94a3b8;
+    text-align: center;
+    max-width: 60px;
+}
+
+.circuit-line {
+    width: 24px;
+    height: 3px;
+    background: #475569;
+}
+
+.circuit-component {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    min-width: 80px;
+}
+
+.comp-icon { font-size: 1.1rem; }
+.comp-name { font-size: 0.58rem; color: #e2e8f0; font-weight: 700; }
+.comp-faulty { border-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+
+.ground-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: auto;
+    padding-top: 0.5rem;
+    border-top: 1px solid #1e293b;
+}
+
+.term-pe {
+    background: #15803d !important;
+    border-color: #22c55e !important;
+}
+
+/* Repair Decision Box */
+.repair-decision-box {
+    background: #0f172a;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.decision-header .title {
+    font-size: 0.8rem;
+    color: #f1f5f9;
+}
+
+.decision-header .hint {
+    font-size: 0.68rem;
+}
+
+.fix-options {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.action-feedback {
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+/* Tutorial Modal Styles */
+.btn-tutorial-trigger {
+    background: #0284c7;
+    color: #ffffff;
+    border-color: #38bdf8;
+    font-weight: 700;
+}
+
+.btn-tutorial-trigger:hover {
+    background: #0369a1;
+}
+
+.tutorial-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 7, 13, 0.88);
+    backdrop-filter: blur(6px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.tutorial-modal-card {
+    width: 100%;
+    max-width: 780px;
+    background: #0f1623;
+    border: 2px solid #2563eb;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(37, 99, 235, 0.3);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalPop 0.2s ease-out;
+}
+
+@@keyframes modalPop {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.tutorial-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem 0.6rem;
+    border-bottom: 1px solid #1e293b;
+}
+
+.tutorial-badge {
+    background: #1e3a8a;
+    color: #93c5fd;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    border: 1px solid #3b82f6;
+}
+
+.tutorial-title {
+    color: #ffffff;
+    font-size: 1.15rem;
+    margin: 0;
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+}
+
+.btn-close-tut {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.btn-close-tut:hover {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+.tutorial-step-tabs {
+    display: flex;
+    background: #090e17;
+    border-bottom: 1px solid #1e293b;
+    overflow-x: auto;
+}
+
+.step-tab {
+    flex: 1;
+    padding: 0.65rem 0.5rem;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+}
+
+.step-tab.tab-active {
+    color: var(--cyan-primary);
+    border-bottom-color: var(--cyan-primary);
+    background: rgba(0, 212, 255, 0.05);
+}
+
+.tutorial-content-body {
+    padding: 1.25rem 1.5rem;
+    min-height: 280px;
+    max-height: 440px;
+    overflow-y: auto;
+    font-size: 0.8rem;
+    color: #e2e8f0;
+    line-height: 1.5;
+}
+
+.tut-slide {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.tut-intro-text {
+    font-size: 0.85rem;
+    color: #cbd5e1;
+    margin: 0;
+}
+
+.meter-modes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.meter-mode-card {
+    background: #090e17;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.mode-symbol {
+    font-size: 0.95rem;
+    font-weight: 800;
+}
+
+.meter-mode-card strong {
+    font-size: 0.75rem;
+    color: #f1f5f9;
+}
+
+.meter-mode-card p {
+    margin: 0;
+    font-size: 0.68rem;
+    color: #94a3b8;
+    line-height: 1.3;
+}
+
+.meter-probes-guide {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 0.75rem;
+    background: #090e17;
+    border: 1px dashed #334155;
+    border-radius: 6px;
+    padding: 0.85rem;
+}
+
+.probe-step-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex: 1;
+}
+
+.probe-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 0.7rem;
+    color: #ffffff;
+    width: fit-content;
+}
+
+.probe-badge-black {
+    background: #0284c7;
+}
+
+.probe-badge-red {
+    background: #dc2626;
+}
+
+.probe-step-box p {
+    margin: 0;
+    font-size: 0.7rem;
+    color: #cbd5e1;
+}
+
+.tut-note-box {
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    border-radius: 4px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.72rem;
+    color: #fef08a;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.note-label {
+    font-weight: 800;
+    color: #facc15;
+}
+
+.fix-examples-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background: #090e17;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 0.6rem;
+}
+
+.fix-example-item {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    background: #0f172a;
+    font-size: 0.72rem;
+}
+
+.fix-tag {
+    font-weight: 800;
+    min-width: 140px;
+}
+
+.ready-cta-box {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    border-radius: 6px;
+    padding: 0.85rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.ready-title {
+    font-size: 0.88rem;
+    font-weight: 800;
+    color: #4ade80;
+}
+
+.ready-sub {
+    font-size: 0.72rem;
+    color: #cbd5e1;
+}
+
+/* Quick Hotkey Strip & Fun Banner */
+.quick-hotkey-strip {
+    background: #090e17;
+    border-bottom: 1px solid #1e293b;
+    padding: 0.4rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.7rem;
+    color: #94a3b8;
+    flex-wrap: wrap;
+}
+
+.hotkey-tip-title {
+    font-weight: 800;
+    color: var(--cyan-primary);
+}
+
+.hotkey-pill {
+    background: #111a2b;
+    border: 1px solid #253347;
+    padding: 3px 8px;
+    border-radius: 4px;
+    color: #cbd5e1;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hotkey-pill:hover {
+    background: #1e293b;
+    border-color: var(--cyan-primary);
+    color: #ffffff;
+}
+
+.hotkey-pill kbd, kbd {
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-bottom: 2px solid #334155;
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: #38bdf8;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 0.68rem;
+}
+
+.kbd-lg {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+}
+
+.tut-fun-banner {
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 6px;
+    padding: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.tut-fun-banner .fun-emoji {
+    font-size: 1.8rem;
+}
+
+.tut-fun-banner .fun-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.78rem;
+    color: #f1f5f9;
+}
+
+.easy-badge {
+    background: rgba(34, 197, 94, 0.15);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    color: #4ade80;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+.tutorial-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1.5rem;
+    background: #090e17;
+    border-top: 1px solid #1e293b;
+}
+
+.tut-foot-dots {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.tut-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #334155;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.tut-dot.dot-active {
+    background: var(--cyan-primary);
+    box-shadow: 0 0 8px var(--cyan-primary);
+    transform: scale(1.2);
+}
+</style>
+
+@code {
+    [Parameter] public Gig? CurrentGig { get; set; }
+    [Parameter] public float PlayerStamina { get; set; } = 100f;
+    [Parameter] public EventCallback<MinigameResult> OnComplete { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private ElementReference gameContainerRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { await gameContainerRef.FocusAsync(); } catch { }
+        }
+    }
+
+    // Tutorial state
+    private bool showTutorial = true;
+    private int tutorialStep = 0;
+
+    private void OpenTutorial()
+    {
+        showTutorial = true;
+        tutorialStep = 0;
+    }
+
+    private void CloseTutorial()
+    {
+        showTutorial = false;
+        try { _ = gameContainerRef.FocusAsync(); } catch { }
+    }
+
+    private void NextTutorialStep()
+    {
+        if (tutorialStep < 1) tutorialStep++;
+    }
+
+    private void PrevTutorialStep()
+    {
+        if (tutorialStep > 0) tutorialStep--;
+    }
+
+    private string GetTutorialStepTitle(int step) => step switch
+    {
+        0 => "1. RENTO JA HELPPO VIANHAKU",
+        _ => "2. KORJAUS & NÄPPÄIMET"
+    };
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (showTutorial)
+        {
+            if (e.Key is " " or "Enter")
+            {
+                if (tutorialStep < 1) tutorialStep++;
+                else CloseTutorial();
+            }
+            else if (e.Key is "Escape")
+            {
+                CloseTutorial();
+            }
+            return;
+        }
+
+        if (isGameOver)
+        {
+            if (e.Key is " " or "Enter")
+            {
+                _ = SubmitResult();
+            }
+            return;
+        }
+
+        var key = e.Key.ToLowerInvariant();
+        if (key is " " or "enter")
+        {
+            AutofindFault();
+        }
+        else if (key is "1")
+        {
+            AttemptFix("FUSE");
+        }
+        else if (key is "2")
+        {
+            AttemptFix("ESTOP");
+        }
+        else if (key is "3")
+        {
+            AttemptFix("THERMAL");
+        }
+        else if (key is "4")
+        {
+            AttemptFix("PSU");
+        }
+        else if (key is "5")
+        {
+            AttemptFix("CONTACTOR");
+        }
+        else if (key is "escape")
+        {
+            _ = AbortGame();
+        }
+    }
+
+    private void AutofindFault()
+    {
+        measurementsTaken++;
+        // Auto-probe the exact faulty test point and display helpful arcade hint
+        string targetTp = currentFault.FaultType switch
+        {
+            "FUSE" => "TP2",
+            "ESTOP" => "TP5",
+            "THERMAL" => "TP6",
+            "PSU" => "TP4",
+            _ => "TP7"
+        };
+        redProbePoint = targetTp;
+        blackProbePoint = (currentFault.FaultType == "PSU" || currentFault.FaultType == "ESTOP" || currentFault.FaultType == "THERMAL" || currentFault.FaultType == "CONTACTOR") ? "TP8" : "GND";
+        UpdateMultimeterDisplay();
+        
+        string fixName = currentFault.FaultType switch
+        {
+            "FUSE" => "1. Sulake F1",
+            "ESTOP" => "2. Hätä-seis S0",
+            "THERMAL" => "3. Lämpörele F2",
+            "PSU" => "4. Teholähde 24V",
+            _ => "5. Kontaktori K1"
+        };
+        actionFeedback = $"🔍 PIKADIAGNOOSI: Mittapää osui vikaan kohteessa {targetTp}! Vika näyttää olevan: {currentFault.FaultTitle}. Paina [{fixName[0]}] korjataksesi!";
+        try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+    }
+
+    public record IndustrialFault(
+        string FaultType,
+        string FaultTitle,
+        string CustomerReport,
+        string BrokenComponentId
+    );
+
+    private List<IndustrialFault> potentialFaults = new()
+    {
+        new("FUSE", "Palanut sulake F1 (vaihe L2 poikki)", "Moottori jurahtaa muttei pyöri, pääkeskukselta kuuluu surinaa.", "F1"),
+        new("ESTOP", "Jumittunut hätä-seis S0", "Ohjausjännite puuttuu kokonaan, laite ei reagoi käynnistysnappiin.", "S0"),
+        new("THERMAL", "Lauennut lämpörele F2 (95-96 auki)", "Pumppu pysähtyi kuormituksessa, lämpöreleen punainen indikaattori ylhäällä.", "F2"),
+        new("PSU", "Viallinen 24VDC Teholähde T1", "24V ohjausjännite on 0V, merkkivalot pimeänä.", "PSU"),
+        new("CONTACTOR", "Kontaktori K1 kelakatkos (A1-A2 poikki)", "Käynnistysnappia painettaessa ohjausjännite tulee kelalle, mutta kontaktori ei vedä.", "K1")
+    };
+
+    private IndustrialFault currentFault = default!;
+
+    // Multimeter State
+    private string currentMode = "V AC"; // OFF, V AC, V DC, OHM, CONT
+    private string displayValue = "0.0";
+    private string displayUnit = "V~";
+
+    private string? redProbePoint = null;
+    private string? blackProbePoint = null;
+    private int measurementsTaken = 0;
+    private int wrongFixCount = 0;
+    private bool isSolved = false;
+    private string actionFeedback = "";
+    private bool isGameOver = false;
+    private MinigameResult? finalResult;
+
+    protected override void OnInitialized()
+    {
+        // Randomize fault
+        var rng = new Random();
+        currentFault = potentialFaults[rng.Next(potentialFaults.Count)];
+        UpdateMultimeterDisplay();
+    }
+
+    private void CycleMode()
+    {
+        currentMode = currentMode switch
+        {
+            "OFF" => "V AC",
+            "V AC" => "V DC",
+            "V DC" => "OHM",
+            "OHM" => "CONT",
+            _ => "OFF"
+        };
+        try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+        UpdateMultimeterDisplay();
+    }
+
+    private string GetKnobClass() => currentMode switch
+    {
+        "OFF" => "knob-pos-off",
+        "V AC" => "knob-pos-vac",
+        "V DC" => "knob-pos-vdc",
+        "OHM" => "knob-pos-ohm",
+        "CONT" => "knob-pos-cont",
+        _ => "knob-pos-vac"
+    };
+
+    private void ProbePoint(string tp)
+    {
+        // Alternate probe placement
+        if (blackProbePoint == null)
+        {
+            blackProbePoint = tp;
+        }
+        else if (redProbePoint == null)
+        {
+            redProbePoint = tp;
+            measurementsTaken++;
+        }
+        else
+        {
+            // Move red probe, keep black probe as COM reference
+            redProbePoint = tp;
+            measurementsTaken++;
+        }
+
+        try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+        UpdateMultimeterDisplay();
+    }
+
+    private string GetTpClass(string tp)
+    {
+        if (redProbePoint == tp) return "probe-red";
+        if (blackProbePoint == tp) return "probe-black";
+        return "";
+    }
+
+    private void UpdateMultimeterDisplay()
+    {
+        if (currentMode == "OFF")
+        {
+            displayValue = "";
+            displayUnit = "";
+            return;
+        }
+
+        if (redProbePoint == null || blackProbePoint == null)
+        {
+            displayValue = currentMode == "OHM" ? "OL" : "0.0";
+            displayUnit = currentMode switch { "V AC" => "V~", "V DC" => "V⎓", "OHM" => "MΩ", "CONT" => "Ω", _ => "" };
+            return;
+        }
+
+        // Calculate authentic physical reading based on active fault
+        string p1 = redProbePoint;
+        string p2 = blackProbePoint;
+
+        // Voltage AC check
+        if (currentMode == "V AC")
+        {
+            displayUnit = "V~";
+            if ((p1 == "TP1" && p2 == "GND") || (p1 == "GND" && p2 == "TP1") ||
+                (p1 == "TP2" && p2 == "GND") || (p1 == "GND" && p2 == "TP2"))
+            {
+                displayValue = "231.4"; // Standard phase to ground
+            }
+            else if ((p1 == "TP3" && p2 == "GND") || (p1 == "GND" && p2 == "TP3"))
+            {
+                // If FUSE fault, phase voltage dropped
+                displayValue = currentFault.FaultType == "FUSE" ? "0.8" : "230.9";
+            }
+            else if ((p1 == "TP4" && p2 == "GND") || (p1 == "GND" && p2 == "TP4"))
+            {
+                displayValue = (currentFault.FaultType == "FUSE" || currentFault.FaultType == "CONTACTOR") ? "0.0" : "230.5";
+            }
+            else
+            {
+                displayValue = "0.0";
+            }
+        }
+        else if (currentMode == "V DC")
+        {
+            displayUnit = "V⎓";
+            if ((p1 == "TP5" && p2 == "TP8") || (p1 == "TP8" && p2 == "TP5"))
+            {
+                displayValue = currentFault.FaultType == "PSU" ? "0.2" : "24.1";
+            }
+            else if ((p1 == "TP6" && p2 == "TP8") || (p1 == "TP8" && p2 == "TP6"))
+            {
+                // After E-STOP
+                displayValue = (currentFault.FaultType == "PSU" || currentFault.FaultType == "ESTOP") ? "0.0" : "24.0";
+            }
+            else if ((p1 == "TP7" && p2 == "TP8") || (p1 == "TP8" && p2 == "TP7"))
+            {
+                // After Thermal relay
+                displayValue = (currentFault.FaultType == "PSU" || currentFault.FaultType == "ESTOP" || currentFault.FaultType == "THERMAL") ? "0.0" : "24.0";
+            }
+            else
+            {
+                displayValue = "0.0";
+            }
+        }
+        else if (currentMode == "OHM" || currentMode == "CONT")
+        {
+            displayUnit = currentMode == "OHM" ? "Ω" : "CONT";
+            // Check continuity of specific components
+            if ((p1 == "TP2" && p2 == "TP3") || (p1 == "TP3" && p2 == "TP2"))
+            {
+                // Sulake F1
+                if (currentFault.FaultType == "FUSE")
+                {
+                    displayValue = "OL";
+                }
+                else
+                {
+                    displayValue = "0.2";
+                    if (currentMode == "CONT") try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+                }
+            }
+            else if ((p1 == "TP5" && p2 == "TP6") || (p1 == "TP6" && p2 == "TP5"))
+            {
+                // E-stop S0
+                if (currentFault.FaultType == "ESTOP")
+                {
+                    displayValue = "OL";
+                }
+                else
+                {
+                    displayValue = "0.4";
+                    if (currentMode == "CONT") try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+                }
+            }
+            else if ((p1 == "TP6" && p2 == "TP7") || (p1 == "TP7" && p2 == "TP6"))
+            {
+                // Thermal relay F2
+                if (currentFault.FaultType == "THERMAL")
+                {
+                    displayValue = "OL";
+                }
+                else
+                {
+                    displayValue = "0.3";
+                    if (currentMode == "CONT") try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+                }
+            }
+            else
+            {
+                displayValue = "OL";
+            }
+        }
+    }
+
+    private void AttemptFix(string chosenFix)
+    {
+        if (isSolved) return;
+
+        if (chosenFix == currentFault.FaultType)
+        {
+            isSolved = true;
+            actionFeedback = $"✔ OIKEA KORJAUS! {currentFault.FaultTitle} korjattu. Linja käynnistyy ja moottori pyörii normaalisti!";
+            try { JS.InvokeVoidAsync("GameAudio.playSuccess"); } catch { }
+
+            _ = Task.Delay(1400).ContinueWith(_ =>
+            {
+                InvokeAsync(FinishGame);
+            });
+        }
+        else
+        {
+            wrongFixCount++;
+            actionFeedback = "⚠ VÄÄRÄ TOIMENPIDE! Vika ei poistunut, laitteisto ei vieläkään käynnisty. Jatka mittauksia!";
+            try { JS.InvokeVoidAsync("GameAudio.playMiss"); } catch { }
+        }
+    }
+
+    private void FinishGame()
+    {
+        isGameOver = true;
+        float precision = Math.Clamp(100f - (wrongFixCount * 30f) - (measurementsTaken > 8 ? (measurementsTaken - 8) * 3f : 0f), 40f, 100f);
+        string grade = precision >= 85f ? "perfect" : precision >= 60f ? "good" : "fail";
+
+        double basePay = CurrentGig != null ? (CurrentGig.PayMin + CurrentGig.PayMax) / 2.0 : 280.0;
+        double payout = grade switch
+        {
+            "perfect" => basePay * 1.25,
+            "good" => basePay,
+            _ => basePay * 0.4
+        };
+
+        int xp = grade switch
+        {
+            "perfect" => 140,
+            "good" => 80,
+            _ => 25
+        };
+
+        int repDelta = grade switch
+        {
+            "perfect" => 7,
+            "good" => 2,
+            _ => -6
+        };
+
+        finalResult = new MinigameResult(precision, grade, xp, repDelta, payout);
+        StateHasChanged();
+    }
+
+    private Task SubmitResult() => finalResult != null ? OnComplete.InvokeAsync(finalResult) : Task.CompletedTask;
+    private Task AbortGame() => OnCancel.InvokeAsync();
+}

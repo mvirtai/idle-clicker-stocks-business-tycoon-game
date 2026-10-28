@@ -1,0 +1,36 @@
+version: '3'
+
+tasks:
+  dev:
+    desc: "Käynnistää Go-backendin ja Blazor-frontendin rinnakkain"
+    deps:
+      - task: backend:dev
+      - task: frontend:dev
+
+  backend:dev:
+    desc: "Go-backend (portti 8080)"
+    dir: backend
+    cmds:
+      - task dev
+
+  frontend:dev:
+    desc: "Blazor WASM dev-palvelin (portti 5000)"
+    dir: frontend
+    cmds:
+      - task dev
+
+  check:
+    desc: "Ajaa molempien puolten tarkistukset"
+    cmds:
+      - task: backend:check
+      - task: frontend:check
+
+  backend:check:
+    dir: backend
+    cmds:
+      - task check
+
+  frontend:check:
+    dir: frontend
+    cmds:
+      - task check

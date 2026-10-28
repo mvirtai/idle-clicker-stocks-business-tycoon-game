@@ -1,0 +1,2251 @@
+@namespace ClickerGame.Client.Pages.Minigame
+@using ClickerGame.Client.Models
+@inject IJSRuntime JS
+
+<div class="wiring-game-screen" tabindex="0" @ref="gameContainerRef" @onkeydown="HandleKeyDown">
+    <!-- Top Bar -->
+    <header class="game-hud-bar">
+        <div class="hud-left">
+            <span class="hud-tag font-mono">KESKUSASENNUS // NOPEA KYTKENTÄ</span>
+            <h2 class="hud-title font-heading">
+                @(CurrentGig != null ? $"{CurrentGig.ClientName} // KESKUKSEN KYTKENTÄ" : "KESKUKSEN KYTKENTÄ JA KOESTUS")
+            </h2>
+        </div>
+
+        <div class="hud-center">
+            <div class="hud-pill font-mono">
+                <span class="label">STAMINA:</span>
+                <span class="val text-cyan">@Math.Round(PlayerStamina, 0)%</span>
+            </div>
+            <div class="hud-pill font-mono">
+                <span class="label">JOHDOT:</span>
+                <span class="val text-amber">@connectedWires.Count / @connectionRules.Count</span>
+            </div>
+            <div class="hud-pill font-mono">
+                <span class="label">STATUS:</span>
+                <span class="val @(isTested && testSuccess ? "text-green" : isTested ? "text-danger" : "text-cyan")">
+                    @(isTested && testSuccess ? "✔ HYVÄKSYTTY" : isTested ? "⚠ VIKA PIIRISSÄ" : "ODOTTAA TESTAUSTA")
+                </span>
+            </div>
+        </div>
+
+        <div class="hud-right">
+            <button class="btn-industrial btn-sm btn-tutorial-trigger" @onclick="OpenTutorial">❓ OPAS</button>
+            <button class="btn-industrial btn-sm btn-abort" @onclick="AbortGame">✕ KESKEYTÄ</button>
+        </div>
+    </header>
+
+    <!-- Keyboard Hotkey Shortcut Banner (Näppäinohjaus) -->
+    <div class="quick-hotkey-strip font-mono">
+        <span class="hotkey-tip-title">⚡ NÄPPÄINOIKOTIET:</span>
+        <span class="hotkey-pill" @onclick="QuickConnectNext" title="Paina VÄLILYÖNTIÄ tai ENTERIÄ kytkeäksesi seuraava johto"><kbd>SPACE</kbd> / <kbd>ENTER</kbd> = Kytke seuraava johto</span>
+        <span class="hotkey-pill" @onclick="AutoWireAll" title="Paina A kytkeäksesi kaikki kerralla"><kbd>A</kbd> = Kytke kaikki heti</span>
+        <span class="hotkey-pill" @onclick="RunPowerTest" title="Paina T koestaaksesi keskuksen"><kbd>T</kbd> = Koesta keskus</span>
+        <span class="hotkey-pill" @onclick="ClearAllWires" title="Paina C tyhjentääksesi"><kbd>C</kbd> = Tyhjennä johdot</span>
+    </div>
+
+    <!-- Paused Tutorial Modal Overlay (Yksinkertainen rento opas) -->
+    @if (showTutorial)
+    {
+        <div class="tutorial-modal-backdrop">
+            <div class="tutorial-modal-card industrial-card">
+                <!-- Modal Top Navigation Tabs -->
+                <div class="tutorial-header">
+                    <div class="tutorial-badge font-mono">PIKAOPAS // @(tutorialStep + 1) / 3</div>
+                    <h3 class="tutorial-title font-heading">@GetTutorialStepTitle(tutorialStep)</h3>
+                    <button class="btn-close-tut" @onclick="CloseTutorial" title="Sulje tutoriaali">✕</button>
+                </div>
+
+                <div class="tutorial-step-tabs font-mono">
+                    <button class="step-tab @(tutorialStep == 0 ? "tab-active" : "")" @onclick="() => tutorialStep = 0">
+                        1. HELPPO PELAAMINEN
+                    </button>
+                    <button class="step-tab @(tutorialStep == 1 ? "tab-active" : "")" @onclick="() => tutorialStep = 1">
+                        2. NÄPPÄIMET & KLIKKAUS
+                    </button>
+                    <button class="step-tab @(tutorialStep == 2 ? "tab-active" : "")" @onclick="() => tutorialStep = 2">
+                        3. KOESTUS JA PALKKA
+                    </button>
+                </div>
+
+                <!-- Modal Content Pages -->
+                <div class="tutorial-content-body font-mono">
+                    @if (tutorialStep == 0)
+                    {
+                        <!-- STEP 1: Relaxed goal -->
+                        <div class="tut-slide">
+                            <div class="tut-fun-banner">
+                                <span class="fun-emoji">🎮</span>
+                                <div class="fun-text">
+                                    <strong>Rentoudu ja klikkaile! Ei tarvitse olla insinööri.</strong>
+                                    <span>Tavoitteena on vain napsutella sähkökaapin johdot paikoilleen ja kuitata keikasta mukavat rahat ja kokemuspisteet!</span>
+                                </div>
+                            </div>
+
+                            <div class="tut-instruction-split">
+                                <div class="tut-box tut-box-visual">
+                                    <h4 class="box-title text-cyan">TAPA 1: NÄPPÄIMISTÖLLÄ (NOPEIN!)</h4>
+                                    <p class="box-tip">
+                                        Paina vain <kbd class="kbd-lg">SPACE</kbd> (välilyöntiä) tai <kbd class="kbd-lg">ENTER</kbd>! Jokainen painallus napsauttaa seuraavan johdon heti kiinni.
+                                    </p>
+                                    <div class="easy-badge">⚡ 12 painallusta ja homma valmis!</div>
+                                </div>
+
+                                <div class="tut-box tut-box-button">
+                                    <h4 class="box-title text-green">TAPA 2: NÄYTTÖÄ KLIKKAAMALLA</h4>
+                                    <p class="box-tip">
+                                        Paina vasemmalta listasta vihreää <strong>[⚡ KYTKE]</strong> -nappia tai suoraan <strong>[⚡ KYTKE KAIKKI]</strong>, jos haluat valmista yhdellä klikkauksella!
+                                    </p>
+                                    <div class="easy-badge">👆 Klikkaa suoraan ruudulta!</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else if (tutorialStep == 1)
+                    {
+                        <!-- STEP 2: Connecting details without engineer jargon -->
+                        <div class="tut-slide">
+                            <p class="tut-intro-text">
+                                Jos haluat fiilistellä sähköasentajaa ja klikata ruuveja itse kaapista:
+                            </p>
+
+                            <div class="visual-step-diagram" style="padding: 1rem;">
+                                <div class="diagram-step">
+                                    <span class="step-circle step-circle-start">1</span>
+                                    <span class="step-desc">Klikkaa sinisenä vilkkuvaa ruuvia<br/><strong>[1. ALKU]</strong></span>
+                                </div>
+                                <span class="diagram-arrow">➔</span>
+                                <div class="diagram-step">
+                                    <span class="step-circle step-circle-end">2</span>
+                                    <span class="step-desc">Klikkaa keltaisena vilkkuvaa ruuvia<br/><strong>[2. KOHDE]</strong></span>
+                                </div>
+                            </div>
+
+                            <div class="tut-note-box">
+                                <span class="note-label">✨ VINKKI:</span>
+                                <span>Peli näyttää aina selkeän animoidun nuoliviivan ja valon ruuvien välillä. Et voi eksyä! Peli myös valitsee automaattisesti oikean johdinvärin.</span>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- STEP 3: Testing & Payout -->
+                        <div class="tut-slide">
+                            <p class="tut-intro-text">
+                                Kun kaikki 12 johtoa on kiinni:
+                            </p>
+
+                            <div class="tut-test-flow">
+                                <div class="test-step-card">
+                                    <span class="step-num">1</span>
+                                    <strong>PAINA [T] TAI NAPPIA</strong>
+                                    <p>Paina näppäimistöltä <kbd>T</kbd> tai klikkaa sinistä <strong>"⚡ KOESTA KESKUS"</strong> -nappia.</p>
+                                </div>
+                                <div class="test-step-card">
+                                    <span class="step-num">2</span>
+                                    <strong>VIRTA KYTKETTY</strong>
+                                    <p>Kytkin kääntyy, kontaktori vetää kiinni ja moottori pyörähtää käyntiin!</p>
+                                </div>
+                                <div class="test-step-card">
+                                    <span class="step-num">3</span>
+                                    <strong>RAHAT TASKUUN</strong>
+                                    <p>Saat täyden urakkapalkan tilillesi sekä kokemuspisteitä hahmon kehittämiseen.</p>
+                                </div>
+                            </div>
+
+                            <div class="ready-cta-box" style="margin-top: 1rem;">
+                                <span class="ready-title">VALMIINA KYTKEMÄÄN?</span>
+                                <span class="ready-sub">Voit painaa <kbd>SPACE</kbd> ja pelata heti!</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Modal Bottom Action Bar -->
+                <div class="tutorial-footer">
+                    <div class="tut-foot-left">
+                        @if (tutorialStep > 0)
+                        {
+                            <button class="btn-industrial btn-sm" @onclick="PrevTutorialStep">
+                                ◀ EDELLINEN
+                            </button>
+                        }
+                    </div>
+
+                    <div class="tut-foot-dots">
+                        @for (int s = 0; s < 3; s++)
+                        {
+                            var stepIdx = s;
+                            <span class="tut-dot @(tutorialStep == stepIdx ? "dot-active" : "")" 
+                                  @onclick="() => tutorialStep = stepIdx"></span>
+                        }
+                    </div>
+
+                    <div class="tut-foot-right">
+                        @if (tutorialStep < 2)
+                        {
+                            <button class="btn-industrial btn-industrial-cyan btn-sm" @onclick="NextTutorialStep">
+                                SEURAAVA SIVU ▶
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn-industrial btn-industrial-cyan btn-lg font-bold" @onclick="CloseTutorial">
+                                🎮 ALOITA PELI (SPACE)!
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Main Workspace -->
+    <main class="cabinet-workspace">
+        <!-- Left: Work Order & Wiring Checklist (Työmääräin / Kytkentälista) -->
+        <aside class="schematic-panel industrial-card">
+            <div class="panel-header">
+                <span class="led-indicator led-cyan"></span>
+                <span class="font-heading title">KYTKENTÄOHJE #WD-401</span>
+            </div>
+
+            <div class="schematic-body font-mono">
+                <div class="schematic-banner">
+                    <span class="banner-badge">💡 OHJE:</span>
+                    <span>Yhdistä sähkökeskuksen ruuvit toisiinsa. Voit klikata suoraan alta <strong>[⚡ KYTKE]</strong> -nappia tai klikata ruudulla vilkkuvia ruuveja!</span>
+                </div>
+
+                <div class="auto-wire-bar">
+                    <button class="btn-industrial btn-sm btn-autowire-all" @onclick="AutoWireAll">
+                        ⚡ KYTKE KAIKKI AUTOMAATTISESTI
+                    </button>
+                    @if (connectedWires.Count > 0)
+                    {
+                        <button class="btn-industrial btn-sm" @onclick="ClearAllWires">
+                            🗑 TYHJENNÄ
+                        </button>
+                    }
+                </div>
+
+                <div class="task-checklist">
+                    <div class="checklist-header">
+                        <span class="checklist-title">KYTKETTÄVÄT JOHTIMET (@connectedWires.Count/@connectionRules.Count):</span>
+                    </div>
+
+                    @for (int i = 0; i < connectionRules.Count; i++)
+                    {
+                        var rule = connectionRules[i];
+                        var idx = i;
+                        var isDone = IsConnectionMade(rule.FromId, rule.ToId);
+                        var isActive = activeRuleIndex == idx;
+
+                        <div class="checklist-item @(isDone ? "item-done" : "") @(isActive ? "item-active" : "")"
+                             @onclick="() => SelectActiveRule(idx)">
+                            <div class="item-left">
+                                <span class="check-box">@(isDone ? "✔" : $"{idx + 1}.")</span>
+                                <span class="wire-color-pip" style="background-color: @rule.ColorHex" title="@rule.ColorName"></span>
+                                <div class="rule-labels">
+                                    <span class="rule-main">@rule.Description</span>
+                                    <span class="rule-detail">@rule.FromLabel ➔ @rule.ToLabel</span>
+                                </div>
+                            </div>
+
+                            <div class="item-right">
+                                @if (isDone)
+                                {
+                                    <button class="btn-item-action btn-item-remove" @onclick:stopPropagation="true" @onclick="() => RemoveConnection(rule.FromId, rule.ToId)">
+                                        ✕ IRROTA
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn-item-action btn-item-connect" @onclick:stopPropagation="true" @onclick="() => AutoConnectRule(rule)">
+                                        ⚡ KYTKE
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Wire Color Palette Tool -->
+            <div class="palette-box">
+                <span class="palette-title font-mono">KÄYTETTÄVÄ JOHDINVÄRI:</span>
+                <div class="color-buttons">
+                    @foreach (var c in availableColors)
+                    {
+                        <button class="color-btn @(selectedColor == c.Hex ? "color-active" : "")" 
+                                style="background-color: @c.Hex"
+                                title="@c.Name"
+                                @onclick="() => selectedColor = c.Hex">
+                            <span class="color-badge">@c.Code</span>
+                        </button>
+                    }
+                </div>
+                <span class="current-color-label font-mono">@GetColorName(selectedColor)</span>
+            </div>
+        </aside>
+
+        <!-- Center: Electrical Cabinet Enclosure (Sähkökeskus) -->
+        <div class="cabinet-enclosure industrial-card">
+            <!-- Instructions & Active Guide Header -->
+            <div class="guide-action-bar font-mono">
+                @if (ActiveRule != null && !IsConnectionMade(ActiveRule.FromId, ActiveRule.ToId))
+                {
+                    <div class="active-guide-box">
+                        <span class="guide-pulsing-badge">SEURAAVA KYTKENTÄ:</span>
+                        <span class="guide-step-text">
+                            Kytke <strong style="color: @ActiveRule.ColorHex">@ActiveRule.ColorName</strong>: 
+                            <span class="guide-term from-term">1. @ActiveRule.FromLabel</span> ➔ 
+                            <span class="guide-term to-term">2. @ActiveRule.ToLabel</span>
+                        </span>
+                        <span class="guide-tip">(Klikkaa ruudulla vilkkuvaa ruuvia 1 ja sen jälkeen ruuvia 2)</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="active-guide-box all-connected">
+                        <span class="text-green font-bold">✔ KAIKKI 12 JOHDINTA KYTKETTY!</span>
+                        <span class="guide-tip">Paina alla olevaa <strong>"⚡ KOESTA KESKUS"</strong> -painiketta testataksesi toiminnan.</span>
+                    </div>
+                }
+            </div>
+
+            <!-- Interactive Cabinet Canvas (Fixed 960x380 workspace for precision overlay) -->
+            <div class="cabinet-canvas-container" @ref="canvasContainer">
+                <!-- SVG Wire Layer -->
+                <svg class="wires-svg-layer" viewBox="0 0 960 380">
+                    <defs>
+                        <filter id="wire-shadow" x="-10%" y="-10%" width="120%" height="120%">
+                            <feDropShadow dx="1" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.7" />
+                        </filter>
+
+                        <!-- Animated dash flow for active guide line -->
+                        <linearGradient id="guide-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#00d4ff" />
+                            <stop offset="100%" stop-color="#f59e0b" />
+                        </linearGradient>
+                    </defs>
+
+                    <!-- Active Step Animated Guide Line -->
+                    @if (ActiveRule != null && !IsConnectionMade(ActiveRule.FromId, ActiveRule.ToId))
+                    {
+                        var p1 = GetTerminalPos(ActiveRule.FromId);
+                        var p2 = GetTerminalPos(ActiveRule.ToId);
+                        <path d="@GetWirePath(p1, p2)" 
+                              stroke="url(#guide-grad)" 
+                              stroke-width="3" 
+                              stroke-dasharray="8 6"
+                              fill="none" 
+                              class="active-guide-path" />
+
+                        <!-- Beacon rings on active screws -->
+                        <circle cx="@p1.X" cy="@p1.Y" r="16" fill="none" stroke="#00d4ff" stroke-width="2" class="beacon-circle" />
+                        <circle cx="@p2.X" cy="@p2.Y" r="16" fill="none" stroke="#f59e0b" stroke-width="2" class="beacon-circle delay-beacon" />
+                    }
+
+                    <!-- Connected Wires -->
+                    @foreach (var wire in connectedWires)
+                    {
+                        var p1 = GetTerminalPos(wire.FromId);
+                        var p2 = GetTerminalPos(wire.ToId);
+                        var path = GetWirePath(p1, p2);
+                        <path d="@path" 
+                              stroke="@wire.Color" 
+                              stroke-width="6" 
+                              fill="none" 
+                              stroke-linecap="round"
+                              class="cabinet-wire"
+                              filter="url(#wire-shadow)"
+                              title="Klikkaa irrottaaksesi tämä johdin"
+                              @onclick="() => RemoveWire(wire)" />
+                    }
+
+                    <!-- Preview wire when first screw clicked -->
+                    @if (selectedTerminalId != null && hoverTerminalId != null && selectedTerminalId != hoverTerminalId)
+                    {
+                        var p1 = GetTerminalPos(selectedTerminalId);
+                        var p2 = GetTerminalPos(hoverTerminalId);
+                        <path d="@GetWirePath(p1, p2)" 
+                              stroke="@selectedColor" 
+                              stroke-width="5" 
+                              stroke-dasharray="6 4"
+                              fill="none" 
+                              class="preview-wire" />
+                    }
+                </svg>
+
+                <!-- DIN Rail Components Fixed Precision Layout -->
+                <div class="components-workspace">
+                    <!-- Component 1: Syöttörima X1 -->
+                    <div class="din-component comp-x1">
+                        <div class="component-header font-mono">
+                            <span class="comp-tag">X1: PÄÄSYÖTTÖ</span>
+                            <span class="comp-desc">Verkkokaapeli 400V</span>
+                        </div>
+                        <div class="terminal-group top-group">
+                            <div class="terminal-unit @GetTerminalClass("X1_L1")" @onclick='() => ClickTerminal("X1_L1")' @onmouseenter='() => HoverTerminal("X1_L1")'>
+                                @if (IsScrewActiveTarget("X1_L1", out var label1)) { <span class="screw-badge badge-@label1.Type">@label1.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">L1</span>
+                                <span class="term-sub">Vaihe 1</span>
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("X1_L2")" @onclick='() => ClickTerminal("X1_L2")' @onmouseenter='() => HoverTerminal("X1_L2")'>
+                                @if (IsScrewActiveTarget("X1_L2", out var label2)) { <span class="screw-badge badge-@label2.Type">@label2.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">L2</span>
+                                <span class="term-sub">Vaihe 2</span>
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("X1_L3")" @onclick='() => ClickTerminal("X1_L3")' @onmouseenter='() => HoverTerminal("X1_L3")'>
+                                @if (IsScrewActiveTarget("X1_L3", out var label3)) { <span class="screw-badge badge-@label3.Type">@label3.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">L3</span>
+                                <span class="term-sub">Vaihe 3</span>
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("X1_N")" @onclick='() => ClickTerminal("X1_N")' @onmouseenter='() => HoverTerminal("X1_N")'>
+                                @if (IsScrewActiveTarget("X1_N", out var label4)) { <span class="screw-badge badge-@label4.Type">@label4.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">N</span>
+                                <span class="term-sub">Nolla</span>
+                            </div>
+                            <div class="terminal-unit term-pe @GetTerminalClass("X1_PE")" @onclick='() => ClickTerminal("X1_PE")' @onmouseenter='() => HoverTerminal("X1_PE")'>
+                                @if (IsScrewActiveTarget("X1_PE", out var label5)) { <span class="screw-badge badge-@label5.Type">@label5.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">PE</span>
+                                <span class="term-sub">Maa</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Component 2: Moottorinsuojakytkin Q1 -->
+                    <div class="din-component comp-q1">
+                        <div class="component-header font-mono">
+                            <span class="comp-tag">Q1: MOOTTORINSUOJA</span>
+                            <span class="comp-desc">Oikosulku- & lämpösuoja</span>
+                        </div>
+
+                        <!-- Top row: Inputs 1, 3, 5 -->
+                        <div class="terminal-group top-group">
+                            <div class="terminal-unit @GetTerminalClass("Q1_1")" @onclick='() => ClickTerminal("Q1_1")' @onmouseenter='() => HoverTerminal("Q1_1")'>
+                                @if (IsScrewActiveTarget("Q1_1", out var labelq1)) { <span class="screw-badge badge-@labelq1.Type">@labelq1.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">1/L1</span>
+                                <span class="term-sub">Tulo 1</span>
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("Q1_3")" @onclick='() => ClickTerminal("Q1_3")' @onmouseenter='() => HoverTerminal("Q1_3")'>
+                                @if (IsScrewActiveTarget("Q1_3", out var labelq3)) { <span class="screw-badge badge-@labelq3.Type">@labelq3.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">3/L2</span>
+                                <span class="term-sub">Tulo 2</span>
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("Q1_5")" @onclick='() => ClickTerminal("Q1_5")' @onmouseenter='() => HoverTerminal("Q1_5")'>
+                                @if (IsScrewActiveTarget("Q1_5", out var labelq5)) { <span class="screw-badge badge-@labelq5.Type">@labelq5.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">5/L3</span>
+                                <span class="term-sub">Tulo 3</span>
+                            </div>
+                        </div>
+
+                        <div class="component-body">
+                            <div class="breaker-switch @(isTested && testSuccess ? "switch-on" : "")">
+                                <span class="switch-knob"></span>
+                                <span class="switch-status font-mono">@(isTested && testSuccess ? "I (ON)" : "0 (OFF)")</span>
+                            </div>
+                        </div>
+
+                        <!-- Bottom row: Outputs 2, 4, 6 -->
+                        <div class="terminal-group bottom-group">
+                            <div class="terminal-unit @GetTerminalClass("Q1_2")" @onclick='() => ClickTerminal("Q1_2")' @onmouseenter='() => HoverTerminal("Q1_2")'>
+                                <span class="term-sub">Lähtö 1</span>
+                                <span class="term-label">2/T1</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("Q1_2", out var labelq2)) { <span class="screw-badge badge-bottom badge-@labelq2.Type">@labelq2.Text</span> }
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("Q1_4")" @onclick='() => ClickTerminal("Q1_4")' @onmouseenter='() => HoverTerminal("Q1_4")'>
+                                <span class="term-sub">Lähtö 2</span>
+                                <span class="term-label">4/T2</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("Q1_4", out var labelq4)) { <span class="screw-badge badge-bottom badge-@labelq4.Type">@labelq4.Text</span> }
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("Q1_6")" @onclick='() => ClickTerminal("Q1_6")' @onmouseenter='() => HoverTerminal("Q1_6")'>
+                                <span class="term-sub">Lähtö 3</span>
+                                <span class="term-label">6/T3</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("Q1_6", out var labelq6)) { <span class="screw-badge badge-bottom badge-@labelq6.Type">@labelq6.Text</span> }
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Component 3: Kontaktori K1 -->
+                    <div class="din-component comp-k1">
+                        <div class="component-header font-mono">
+                            <span class="comp-tag">K1: KONTAKTORI</span>
+                            <span class="comp-desc">Sähköisesti ohjattu pääkytkin</span>
+                        </div>
+
+                        <!-- Top row: 1, 3, 5, A1 -->
+                        <div class="terminal-group top-group">
+                            <div class="terminal-unit @GetTerminalClass("K1_1")" @onclick='() => ClickTerminal("K1_1")' @onmouseenter='() => HoverTerminal("K1_1")'>
+                                @if (IsScrewActiveTarget("K1_1", out var labelk1)) { <span class="screw-badge badge-@labelk1.Type">@labelk1.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">1</span>
+                                <span class="term-sub">Tulo 1</span>
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("K1_3")" @onclick='() => ClickTerminal("K1_3")' @onmouseenter='() => HoverTerminal("K1_3")'>
+                                @if (IsScrewActiveTarget("K1_3", out var labelk3)) { <span class="screw-badge badge-@labelk3.Type">@labelk3.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">3</span>
+                                <span class="term-sub">Tulo 2</span>
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("K1_5")" @onclick='() => ClickTerminal("K1_5")' @onmouseenter='() => HoverTerminal("K1_5")'>
+                                @if (IsScrewActiveTarget("K1_5", out var labelk5)) { <span class="screw-badge badge-@labelk5.Type">@labelk5.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">5</span>
+                                <span class="term-sub">Tulo 3</span>
+                            </div>
+                            <div class="terminal-unit term-coil @GetTerminalClass("K1_A1")" @onclick='() => ClickTerminal("K1_A1")' @onmouseenter='() => HoverTerminal("K1_A1")'>
+                                @if (IsScrewActiveTarget("K1_A1", out var labelka1)) { <span class="screw-badge badge-@labelka1.Type">@labelka1.Text</span> }
+                                <span class="term-screw"></span>
+                                <span class="term-label">A1</span>
+                                <span class="term-sub">Kela +</span>
+                            </div>
+                        </div>
+
+                        <div class="component-body">
+                            <div class="contactor-indicator @(isTested && testSuccess ? "contactor-engaged" : "")">
+                                <span class="armature-slot"></span>
+                                <span class="font-mono label">@(isTested && testSuccess ? "VEDETTY (ON)" : "AUKI (OFF)")</span>
+                            </div>
+                        </div>
+
+                        <!-- Bottom row: 2, 4, 6, A2 -->
+                        <div class="terminal-group bottom-group">
+                            <div class="terminal-unit @GetTerminalClass("K1_2")" @onclick='() => ClickTerminal("K1_2")' @onmouseenter='() => HoverTerminal("K1_2")'>
+                                <span class="term-sub">Lähtö 1</span>
+                                <span class="term-label">2</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("K1_2", out var labelk2)) { <span class="screw-badge badge-bottom badge-@labelk2.Type">@labelk2.Text</span> }
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("K1_4")" @onclick='() => ClickTerminal("K1_4")' @onmouseenter='() => HoverTerminal("K1_4")'>
+                                <span class="term-sub">Lähtö 2</span>
+                                <span class="term-label">4</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("K1_4", out var labelk4)) { <span class="screw-badge badge-bottom badge-@labelk4.Type">@labelk4.Text</span> }
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("K1_6")" @onclick='() => ClickTerminal("K1_6")' @onmouseenter='() => HoverTerminal("K1_6")'>
+                                <span class="term-sub">Lähtö 3</span>
+                                <span class="term-label">6</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("K1_6", out var labelk6)) { <span class="screw-badge badge-bottom badge-@labelk6.Type">@labelk6.Text</span> }
+                            </div>
+                            <div class="terminal-unit term-coil @GetTerminalClass("K1_A2")" @onclick='() => ClickTerminal("K1_A2")' @onmouseenter='() => HoverTerminal("K1_A2")'>
+                                <span class="term-sub">Kela -</span>
+                                <span class="term-label">A2</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("K1_A2", out var labelka2)) { <span class="screw-badge badge-bottom badge-@labelka2.Type">@labelka2.Text</span> }
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Component 4: Lähtörima X2 (Moottorille) -->
+                    <div class="din-component comp-x2">
+                        <div class="component-header font-mono">
+                            <span class="comp-tag">X2: MOOTTORILÄHTÖ</span>
+                            <span class="comp-desc">Kaapeli kentälle</span>
+                        </div>
+                        <div class="terminal-group bottom-group">
+                            <div class="terminal-unit @GetTerminalClass("X2_U1")" @onclick='() => ClickTerminal("X2_U1")' @onmouseenter='() => HoverTerminal("X2_U1")'>
+                                <span class="term-sub">Käämi U1</span>
+                                <span class="term-label">U1</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("X2_U1", out var labelxu)) { <span class="screw-badge badge-bottom badge-@labelxu.Type">@labelxu.Text</span> }
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("X2_V1")" @onclick='() => ClickTerminal("X2_V1")' @onmouseenter='() => HoverTerminal("X2_V1")'>
+                                <span class="term-sub">Käämi V1</span>
+                                <span class="term-label">V1</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("X2_V1", out var labelxv)) { <span class="screw-badge badge-bottom badge-@labelxv.Type">@labelxv.Text</span> }
+                            </div>
+                            <div class="terminal-unit @GetTerminalClass("X2_W1")" @onclick='() => ClickTerminal("X2_W1")' @onmouseenter='() => HoverTerminal("X2_W1")'>
+                                <span class="term-sub">Käämi W1</span>
+                                <span class="term-label">W1</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("X2_W1", out var labelxw)) { <span class="screw-badge badge-bottom badge-@labelxw.Type">@labelxw.Text</span> }
+                            </div>
+                            <div class="terminal-unit term-pe @GetTerminalClass("X2_PE")" @onclick='() => ClickTerminal("X2_PE")' @onmouseenter='() => HoverTerminal("X2_PE")'>
+                                <span class="term-sub">Maa</span>
+                                <span class="term-label">PE</span>
+                                <span class="term-screw"></span>
+                                @if (IsScrewActiveTarget("X2_PE", out var labelxpe)) { <span class="screw-badge badge-bottom badge-@labelxpe.Type">@labelxpe.Text</span> }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Test Console -->
+            <div class="cabinet-test-bar">
+                <div class="test-status-msg font-mono">
+                    @if (!string.IsNullOrEmpty(testFeedback))
+                    {
+                        <span class="@(testSuccess ? "text-green font-bold" : "text-danger font-bold")">@testFeedback</span>
+                    }
+                    else if (connectedWires.Count == connectionRules.Count)
+                    {
+                        <span class="text-green font-bold">✔ Kaikki johtimet asennettu! Paina "KOESTA KESKUS" suorittaaksesi käyttöönottotarkastuksen.</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">Kytke kaikki 12 johdinta ja paina "KOESTA KESKUS".</span>
+                    }
+                </div>
+
+                <div class="test-controls">
+                    <button class="btn-industrial btn-industrial-cyan btn-lg btn-test-power" @onclick="RunPowerTest">
+                        ⚡ KOESTA KESKUS [TEST POWER]
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Loppupöytäkirja / Tarkastusraportti Modal -->
+    @if (isGameOver && finalResult != null)
+    {
+        <div class="result-modal-backdrop">
+            <div class="industrial-card result-report-card">
+                <div class="report-header">
+                    <div class="stamp-badge stamp-@finalResult.Grade.ToLower()">@finalResult.Grade.ToUpper()</div>
+                    <h3 class="report-title font-heading">KESKUKSEN KÄYTTÖÖNOTTOPÖYTÄKIRJA</h3>
+                    <span class="report-sub font-mono">SFS 6000 KÄYTTÖÖNOTTOTARKASTUS HYVÄKSYTTY</span>
+                </div>
+
+                <div class="report-body font-mono">
+                    <div class="report-stat-row">
+                        <span>KYTKENNÄN TARKKUUS:</span>
+                        <span class="text-cyan font-bold">@Math.Round(finalResult.Precision, 1)%</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>URAKKAPALKKIO:</span>
+                        <span class="text-green font-bold">+@finalResult.PayEur.ToString("0") €</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>KOKEMUSPISTEET:</span>
+                        <span class="text-amber font-bold">+@finalResult.XpGained XP</span>
+                    </div>
+                    <div class="report-stat-row">
+                        <span>MAINEVAIKUTUS:</span>
+                        <span class="font-bold @(finalResult.RepDelta >= 0 ? "text-green" : "text-danger")">
+                            @(finalResult.RepDelta >= 0 ? $"+{finalResult.RepDelta}" : finalResult.RepDelta.ToString()) MAINETTA
+                        </span>
+                    </div>
+                </div>
+
+                <div class="report-actions">
+                    <button class="btn-industrial btn-industrial-cyan btn-lg" @onclick="SubmitResult">
+                        ✔ HYVÄKSY JA PALAA KALENTERIIN
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+.wiring-game-screen {
+    position: fixed;
+    inset: 0;
+    background-color: #080b11;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+}
+
+.cabinet-workspace {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    overflow: hidden;
+}
+
+/* Schematic Panel */
+.schematic-panel {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto;
+}
+
+.schematic-banner {
+    background: rgba(0, 212, 255, 0.08);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 4px;
+    padding: 0.6rem;
+    font-size: 0.7rem;
+    color: #e2e8f0;
+    line-height: 1.4;
+}
+
+.banner-badge {
+    color: var(--cyan-primary);
+    font-weight: 800;
+    display: block;
+    margin-bottom: 2px;
+}
+
+.auto-wire-bar {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-autowire-all {
+    flex: 1;
+    background: #0284c7;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+.btn-autowire-all:hover {
+    background: #0369a1;
+}
+
+.task-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background: #090d15;
+    border: 1px solid var(--border-color);
+    padding: 0.6rem;
+    border-radius: 4px;
+    max-height: 380px;
+    overflow-y: auto;
+}
+
+.checklist-title {
+    color: var(--amber-primary);
+    font-weight: 700;
+    font-size: 0.7rem;
+}
+
+.checklist-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0.45rem;
+    border-radius: 3px;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.checklist-item:hover {
+    background: #172554;
+    border-color: #3b82f6;
+}
+
+.checklist-item.item-active {
+    border-color: var(--cyan-primary);
+    background: #112240;
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+}
+
+.checklist-item.item-done {
+    background: rgba(34, 197, 94, 0.08);
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+.item-left {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex: 1;
+}
+
+.check-box {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #94a3b8;
+    min-width: 14px;
+}
+
+.item-done .check-box {
+    color: #22c55e;
+}
+
+.wire-color-pip {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    border: 1px solid #ffffff;
+}
+
+.rule-labels {
+    display: flex;
+    flex-direction: column;
+}
+
+.rule-main {
+    font-size: 0.72rem;
+    color: #f1f5f9;
+    font-weight: 700;
+}
+
+.rule-detail {
+    font-size: 0.62rem;
+    color: #94a3b8;
+}
+
+.btn-item-action {
+    font-size: 0.62rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.btn-item-connect {
+    background: #0284c7;
+    color: #ffffff;
+    border-color: #38bdf8;
+}
+
+.btn-item-connect:hover {
+    background: #0369a1;
+}
+
+.btn-item-remove {
+    background: #7f1d1d;
+    color: #fca5a5;
+    border-color: #ef4444;
+}
+
+.palette-box {
+    margin-top: auto;
+    border-top: 1px solid var(--border-color);
+    padding-top: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.palette-title {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.color-buttons {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.color-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.color-btn.color-active {
+    border-color: #ffffff;
+    box-shadow: 0 0 10px #ffffff;
+    transform: scale(1.1);
+}
+
+.color-badge {
+    font-size: 0.52rem;
+    font-weight: 700;
+    color: #ffffff;
+    text-shadow: 0 1px 2px #000000;
+}
+
+.current-color-label {
+    font-size: 0.68rem;
+    color: var(--cyan-primary);
+}
+
+/* Cabinet Enclosure */
+.cabinet-enclosure {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    position: relative;
+    background: #0f141f;
+    border: 3px solid #28354a;
+}
+
+/* Guide Action Bar */
+.guide-action-bar {
+    background: #111a2b;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 0.6rem 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.active-guide-box {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+}
+
+.guide-pulsing-badge {
+    background: #eab308;
+    color: #000000;
+    font-weight: 900;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    animation: pulse 1.5s infinite;
+}
+
+.guide-step-text {
+    color: #f1f5f9;
+}
+
+.guide-term {
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-weight: 700;
+}
+
+.from-term {
+    background: rgba(0, 212, 255, 0.2);
+    color: #00d4ff;
+    border: 1px solid #00d4ff;
+}
+
+.to-term {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+    border: 1px solid #f59e0b;
+}
+
+.guide-tip {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    margin-left: auto;
+}
+
+/* Cabinet Canvas Container */
+.cabinet-canvas-container {
+    flex: 1;
+    position: relative;
+    background: #0a0e17;
+    border: 2px inset #1e293b;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.wires-svg-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    pointer-events: auto;
+}
+
+.cabinet-wire {
+    cursor: pointer;
+    transition: stroke-width 0.15s ease;
+}
+
+.cabinet-wire:hover {
+    stroke-width: 9 !important;
+    filter: drop-shadow(0 0 8px #ffffff);
+}
+
+.active-guide-path {
+    animation: guideDash 1s linear infinite;
+}
+
+@@keyframes guideDash {
+    to {
+        stroke-dashoffset: -28;
+    }
+}
+
+.beacon-circle {
+    animation: beaconPulse 1.2s ease-out infinite;
+    transform-origin: center;
+}
+
+.delay-beacon {
+    animation-delay: 0.6s;
+}
+
+@@keyframes beaconPulse {
+    0% { r: 10; opacity: 1; stroke-width: 3; }
+    100% { r: 24; opacity: 0; stroke-width: 1; }
+}
+
+/* Fixed Precision DIN components positioning in 960x380 viewport */
+.components-workspace {
+    position: absolute;
+    width: 960px;
+    height: 380px;
+    z-index: 5;
+    pointer-events: none; /* Let clicks fall to children */
+}
+
+.din-component {
+    position: absolute;
+    background: #182233;
+    border: 2px solid #3b4d6d;
+    border-radius: 6px;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+    pointer-events: auto;
+}
+
+.comp-x1 { left: 40px; top: 60px; width: 180px; }
+.comp-q1 { left: 250px; top: 30px; width: 170px; }
+.comp-k1 { left: 450px; top: 30px; width: 210px; }
+.comp-x2 { left: 690px; top: 60px; width: 220px; }
+
+.component-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 0.4rem;
+}
+
+.comp-tag {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: var(--cyan-primary);
+}
+
+.comp-desc {
+    font-size: 0.52rem;
+    color: #94a3b8;
+}
+
+.terminal-group {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.terminal-unit {
+    width: 34px;
+    height: 48px;
+    background: #0f172a;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 2px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.15s ease;
+}
+
+.terminal-unit:hover {
+    border-color: var(--cyan-primary);
+    background: #1e293b;
+    transform: scale(1.06);
+}
+
+.terminal-unit.term-selected {
+    border-color: #ffffff;
+    box-shadow: 0 0 12px var(--cyan-primary);
+    background: #1d4ed8;
+}
+
+.terminal-unit.term-active-start {
+    border-color: #00d4ff;
+    box-shadow: 0 0 15px #00d4ff;
+    background: #082f49;
+    animation: pulse 1s infinite;
+}
+
+.terminal-unit.term-active-end {
+    border-color: #f59e0b;
+    box-shadow: 0 0 15px #f59e0b;
+    background: #451a03;
+    animation: pulse 1s infinite;
+}
+
+.terminal-unit.term-pe {
+    background: #14532d;
+    border-color: #22c55e;
+}
+
+.screw-badge {
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.55rem;
+    font-weight: 800;
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.screw-badge.badge-bottom {
+    top: auto;
+    bottom: -18px;
+}
+
+.badge-start {
+    background: #00d4ff;
+    color: #000000;
+    box-shadow: 0 0 6px #00d4ff;
+}
+
+.badge-end {
+    background: #f59e0b;
+    color: #000000;
+    box-shadow: 0 0 6px #f59e0b;
+}
+
+.badge-selected {
+    background: #22c55e;
+    color: #000000;
+    box-shadow: 0 0 6px #22c55e;
+}
+
+.term-screw {
+    width: 10px;
+    height: 10px;
+    background: radial-gradient(circle, #cbd5e1 30%, #475569 100%);
+    border-radius: 50%;
+    border: 1px solid #1e293b;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.term-label {
+    font-size: 0.58rem;
+    font-weight: 800;
+    color: #f1f5f9;
+}
+
+.term-sub {
+    font-size: 0.45rem;
+    color: #94a3b8;
+    text-align: center;
+    line-height: 1;
+}
+
+.component-body {
+    padding: 0.6rem 0;
+    display: flex;
+    justify-content: center;
+}
+
+.breaker-switch {
+    width: 44px;
+    height: 48px;
+    background: #0f172a;
+    border: 2px solid #334155;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+}
+
+.switch-knob {
+    width: 22px;
+    height: 14px;
+    background: #dc2626;
+    border-radius: 2px;
+}
+
+.switch-on .switch-knob {
+    background: #16a34a;
+}
+
+.switch-status {
+    font-size: 0.52rem;
+    color: #94a3b8;
+}
+
+.contactor-indicator {
+    width: 54px;
+    height: 48px;
+    background: #0f172a;
+    border: 2px solid #334155;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+}
+
+.armature-slot {
+    width: 26px;
+    height: 8px;
+    background: #475569;
+    border-radius: 2px;
+}
+
+.contactor-engaged .armature-slot {
+    background: #00d4ff;
+    box-shadow: 0 0 8px #00d4ff;
+}
+
+.contactor-indicator .label {
+    font-size: 0.48rem;
+    color: var(--text-muted);
+}
+
+/* Tutorial Modal Styles */
+.btn-tutorial-trigger {
+    background: #0284c7;
+    color: #ffffff;
+    border-color: #38bdf8;
+    font-weight: 700;
+}
+
+.btn-tutorial-trigger:hover {
+    background: #0369a1;
+}
+
+.tutorial-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 7, 13, 0.88);
+    backdrop-filter: blur(6px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+}
+
+.tutorial-modal-card {
+    width: 100%;
+    max-width: 780px;
+    background: #0f1623;
+    border: 2px solid #2563eb;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(37, 99, 235, 0.3);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalPop 0.2s ease-out;
+}
+
+@@keyframes modalPop {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.tutorial-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem 0.6rem;
+    border-bottom: 1px solid #1e293b;
+    position: relative;
+}
+
+.tutorial-badge {
+    background: #1e3a8a;
+    color: #93c5fd;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    border: 1px solid #3b82f6;
+}
+
+.tutorial-title {
+    color: #ffffff;
+    font-size: 1.15rem;
+    margin: 0;
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+}
+
+.btn-close-tut {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.btn-close-tut:hover {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+.tutorial-step-tabs {
+    display: flex;
+    background: #090e17;
+    border-bottom: 1px solid #1e293b;
+    overflow-x: auto;
+}
+
+.step-tab {
+    flex: 1;
+    padding: 0.65rem 0.5rem;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    text-align: center;
+}
+
+.step-tab:hover {
+    color: #cbd5e1;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.step-tab.tab-active {
+    color: var(--cyan-primary);
+    border-bottom-color: var(--cyan-primary);
+    background: rgba(0, 212, 255, 0.05);
+}
+
+.tutorial-content-body {
+    padding: 1.25rem 1.5rem;
+    min-height: 330px;
+    max-height: 480px;
+    overflow-y: auto;
+    font-size: 0.8rem;
+    color: #e2e8f0;
+    line-height: 1.5;
+}
+
+.tut-slide {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.tut-intro-text {
+    font-size: 0.85rem;
+    color: #cbd5e1;
+    margin: 0;
+}
+
+/* Step 1 Comp grid */
+.tut-component-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.tut-comp-card {
+    background: #090e17;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 0.75rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.tut-comp-card .comp-icon {
+    font-size: 1.5rem;
+    background: #111a2b;
+    border: 1px solid #28354a;
+    border-radius: 6px;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.tut-comp-card .comp-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+}
+
+/* Step 2 Split instructions */
+.tut-instruction-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.tut-box {
+    background: #090e17;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.box-title {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.visual-step-diagram {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0.5rem;
+    background: #0f172a;
+    border-radius: 4px;
+    border: 1px dashed #334155;
+}
+
+.diagram-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.3rem;
+}
+
+.step-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.85rem;
+}
+
+.step-circle-start {
+    background: #00d4ff;
+    color: #000000;
+    box-shadow: 0 0 10px #00d4ff;
+}
+
+.step-circle-end {
+    background: #f59e0b;
+    color: #000000;
+    box-shadow: 0 0 10px #f59e0b;
+}
+
+.step-desc {
+    font-size: 0.65rem;
+    color: #f1f5f9;
+    line-height: 1.2;
+}
+
+.diagram-arrow {
+    font-size: 1.2rem;
+    color: #64748b;
+}
+
+.box-tip {
+    font-size: 0.7rem;
+    color: #94a3b8;
+    margin: 0;
+}
+
+.btn-sample-connect {
+    background: #0284c7;
+    color: #ffffff;
+    border: 1px solid #38bdf8;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 0.72rem;
+}
+
+.btn-sample-all {
+    background: #0369a1;
+    color: #ffffff;
+    border: 1px solid #38bdf8;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 0.72rem;
+    width: 100%;
+}
+
+.btn-sample-label {
+    font-size: 0.68rem;
+    color: #cbd5e1;
+}
+
+.diagram-btn-sample {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sub-tip {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.tut-note-box {
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    border-radius: 4px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.72rem;
+    color: #fef08a;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.note-label {
+    font-weight: 800;
+    color: #facc15;
+}
+
+/* Step 3 Color spec table */
+.color-spec-table {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: #090e17;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 0.6rem;
+}
+
+.color-row {
+    display: grid;
+    grid-template-columns: 20px 100px 180px 1fr;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: 4px;
+    background: #0f172a;
+    font-size: 0.72rem;
+}
+
+.color-row .swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+}
+
+.col-name {
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.col-role {
+    font-weight: 600;
+}
+
+.col-ex {
+    color: #94a3b8;
+    font-size: 0.65rem;
+}
+
+.tut-footer-note {
+    font-size: 0.72rem;
+    color: var(--cyan-primary);
+    margin: 0;
+}
+
+/* Step 4 Test flow */
+.tut-test-flow {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.test-step-card {
+    background: #090e17;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    text-align: center;
+    position: relative;
+}
+
+.test-step-card .step-num {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #2563eb;
+    color: #ffffff;
+    font-weight: 900;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+}
+
+.test-step-card strong {
+    font-size: 0.75rem;
+    color: #f1f5f9;
+}
+
+.test-step-card p {
+    margin: 0;
+    font-size: 0.68rem;
+    color: #94a3b8;
+    line-height: 1.3;
+}
+
+.ready-cta-box {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    border-radius: 6px;
+    padding: 0.85rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.ready-title {
+    font-size: 0.88rem;
+    font-weight: 800;
+    color: #4ade80;
+}
+
+.ready-sub {
+    font-size: 0.72rem;
+    color: #cbd5e1;
+}
+
+/* Quick Hotkey Strip & Fun Banner */
+.quick-hotkey-strip {
+    background: #090e17;
+    border-bottom: 1px solid #1e293b;
+    padding: 0.4rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.7rem;
+    color: #94a3b8;
+    flex-wrap: wrap;
+}
+
+.hotkey-tip-title {
+    font-weight: 800;
+    color: var(--cyan-primary);
+}
+
+.hotkey-pill {
+    background: #111a2b;
+    border: 1px solid #253347;
+    padding: 3px 8px;
+    border-radius: 4px;
+    color: #cbd5e1;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hotkey-pill:hover {
+    background: #1e293b;
+    border-color: var(--cyan-primary);
+    color: #ffffff;
+}
+
+.hotkey-pill kbd, kbd {
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-bottom: 2px solid #334155;
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: #38bdf8;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 0.68rem;
+}
+
+.kbd-lg {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+}
+
+.tut-fun-banner {
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 6px;
+    padding: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.tut-fun-banner .fun-emoji {
+    font-size: 1.8rem;
+}
+
+.tut-fun-banner .fun-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.78rem;
+    color: #f1f5f9;
+}
+
+.easy-badge {
+    background: rgba(34, 197, 94, 0.15);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    color: #4ade80;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+/* Modal Footer */
+.tutorial-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1.5rem;
+    background: #090e17;
+    border-top: 1px solid #1e293b;
+}
+
+.tut-foot-dots {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.tut-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #334155;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.tut-dot.dot-active {
+    background: var(--cyan-primary);
+    box-shadow: 0 0 8px var(--cyan-primary);
+    transform: scale(1.2);
+}
+
+.tutorial-footer .btn-industrial {
+    cursor: pointer;
+}
+
+/* Cabinet Test Bar */
+.cabinet-test-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.test-controls {
+    display: flex;
+    gap: 0.75rem;
+}
+</style>
+
+@code {
+    [Parameter] public Gig? CurrentGig { get; set; }
+    [Parameter] public float PlayerStamina { get; set; } = 100f;
+    [Parameter] public EventCallback<MinigameResult> OnComplete { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private ElementReference canvasContainer;
+    private ElementReference gameContainerRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await gameContainerRef.FocusAsync();
+            }
+            catch { }
+        }
+    }
+
+    // Tutorial state (active on launch)
+    private bool showTutorial = true;
+    private int tutorialStep = 0;
+
+    private void OpenTutorial()
+    {
+        showTutorial = true;
+        tutorialStep = 0;
+    }
+
+    private void CloseTutorial()
+    {
+        showTutorial = false;
+        try { _ = gameContainerRef.FocusAsync(); } catch { }
+    }
+
+    private void NextTutorialStep()
+    {
+        if (tutorialStep < 2) tutorialStep++;
+    }
+
+    private void PrevTutorialStep()
+    {
+        if (tutorialStep > 0) tutorialStep--;
+    }
+
+    private string GetTutorialStepTitle(int step) => step switch
+    {
+        0 => "1. HELPPO JA RENTO PELITAPA",
+        1 => "2. NÄPPÄIMET & KLIKKAILU",
+        _ => "3. KOESTUS & PALKKA"
+    };
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (showTutorial)
+        {
+            if (e.Key is " " or "Enter")
+            {
+                if (tutorialStep < 2) tutorialStep++;
+                else CloseTutorial();
+            }
+            else if (e.Key is "Escape")
+            {
+                CloseTutorial();
+            }
+            return;
+        }
+
+        if (isGameOver)
+        {
+            if (e.Key is " " or "Enter")
+            {
+                _ = SubmitResult();
+            }
+            return;
+        }
+
+        var key = e.Key.ToLowerInvariant();
+        if (key is " " or "enter")
+        {
+            // Connect next wire or run test if all connected
+            if (connectedWires.Count >= connectionRules.Count)
+            {
+                _ = RunPowerTest();
+            }
+            else
+            {
+                QuickConnectNext();
+            }
+        }
+        else if (key is "a")
+        {
+            AutoWireAll();
+        }
+        else if (key is "t")
+        {
+            _ = RunPowerTest();
+        }
+        else if (key is "c")
+        {
+            ClearAllWires();
+        }
+        else if (key is "escape")
+        {
+            _ = AbortGame();
+        }
+    }
+
+    private void QuickConnectNext()
+    {
+        if (connectedWires.Count >= connectionRules.Count)
+        {
+            return;
+        }
+
+        var nextRule = ActiveRule ?? connectionRules.FirstOrDefault(r => !IsConnectionMade(r.FromId, r.ToId));
+        if (nextRule != null)
+        {
+            AutoConnectRule(nextRule);
+        }
+    }
+
+    public record WireColor(string Code, string Name, string Hex);
+    public record WireConnection(string FromId, string ToId, string Color);
+    public record WiringRule(
+        string FromId, 
+        string ToId, 
+        string FromLabel, 
+        string ToLabel, 
+        string Description, 
+        string ColorHex, 
+        string ColorName
+    );
+
+    private List<WireColor> availableColors = new()
+    {
+        new WireColor("L1", "Ruskea (L1-vaihe)", "#92400e"),
+        new WireColor("L2", "Musta (L2-vaihe)", "#1e293b"),
+        new WireColor("L3", "Harmaa (L3-vaihe)", "#64748b"),
+        new WireColor("N", "Sininen (Nolla)", "#0284c7"),
+        new WireColor("PE", "Kelta-Vihreä (Suojamaa)", "#84cc16"),
+        new WireColor("+24", "Tummansininen (+24V)", "#2563eb"),
+        new WireColor("0V", "Valko-Sininen (0V)", "#93c5fd")
+    };
+
+    private string selectedColor = "#92400e";
+    private string? selectedTerminalId = null;
+    private string? hoverTerminalId = null;
+
+    private int activeRuleIndex = 0;
+    private List<WireConnection> connectedWires = new();
+
+    // The 12 standard direct-on-line 3-phase motor wiring rules
+    private List<WiringRule> connectionRules = new()
+    {
+        new("X1_L1", "Q1_1", "Syöttö X1: L1", "Moottorinsuoja Q1: 1", "Päävirta Vaihe 1", "#92400e", "Ruskea"),
+        new("X1_L2", "Q1_3", "Syöttö X1: L2", "Moottorinsuoja Q1: 3", "Päävirta Vaihe 2", "#1e293b", "Musta"),
+        new("X1_L3", "Q1_5", "Syöttö X1: L3", "Moottorinsuoja Q1: 5", "Päävirta Vaihe 3", "#64748b", "Harmaa"),
+
+        new("Q1_2", "K1_1", "Moottorinsuoja Q1: 2", "Kontaktori K1: 1", "Suojan lähtö 1 ➔ Kontaktori", "#92400e", "Ruskea"),
+        new("Q1_4", "K1_3", "Moottorinsuoja Q1: 4", "Kontaktori K1: 3", "Suojan lähtö 2 ➔ Kontaktori", "#1e293b", "Musta"),
+        new("Q1_6", "K1_5", "Moottorinsuoja Q1: 6", "Kontaktori K1: 5", "Suojan lähtö 3 ➔ Kontaktori", "#64748b", "Harmaa"),
+
+        new("K1_2", "X2_U1", "Kontaktori K1: 2", "Moottoririma X2: U1", "Kontaktori ➔ Moottori U1", "#92400e", "Ruskea"),
+        new("K1_4", "X2_V1", "Kontaktori K1: 4", "Moottoririma X2: V1", "Kontaktori ➔ Moottori V1", "#1e293b", "Musta"),
+        new("K1_6", "X2_W1", "Kontaktori K1: 6", "Moottoririma X2: W1", "Kontaktori ➔ Moottori W1", "#64748b", "Harmaa"),
+
+        new("X1_PE", "X2_PE", "Syöttö X1: PE", "Moottoririma X2: PE", "Suojamaadoitus (PE)", "#84cc16", "Kelta-Vihreä"),
+        new("X1_N", "K1_A2", "Syöttö X1: N", "Kontaktori Kela: A2", "Ohjauspiiri Nollajohdin", "#0284c7", "Sininen"),
+        new("X1_L1", "K1_A1", "Syöttö X1: L1", "Kontaktori Kela: A1", "Ohjauspiiri Vaihejohdin", "#92400e", "Ruskea")
+    };
+
+    private WiringRule? ActiveRule => 
+        (activeRuleIndex >= 0 && activeRuleIndex < connectionRules.Count) 
+            ? connectionRules[activeRuleIndex] 
+            : null;
+
+    private bool isTested = false;
+    private bool testSuccess = false;
+    private string testFeedback = "";
+    private bool isGameOver = false;
+    private MinigameResult? finalResult;
+
+    // Exact physical center coordinates (X, Y) of every terminal screw on the 960x380 SVG board
+    private Dictionary<string, (int X, int Y)> terminalCoords = new()
+    {
+        // X1 Syöttö: comp-x1 at left: 40px, top: 60px
+        ["X1_L1"] = (65, 100),
+        ["X1_L2"] = (103, 100),
+        ["X1_L3"] = (141, 100),
+        ["X1_N"]  = (179, 100),
+        ["X1_PE"] = (217, 100),
+
+        // Q1 Moottorinsuoja: comp-q1 at left: 250px, top: 30px
+        ["Q1_1"] = (280, 70),
+        ["Q1_3"] = (335, 70),
+        ["Q1_5"] = (390, 70),
+        ["Q1_2"] = (280, 215),
+        ["Q1_4"] = (335, 215),
+        ["Q1_6"] = (390, 215),
+
+        // K1 Kontaktori: comp-k1 at left: 450px, top: 30px
+        ["K1_1"]  = (480, 70),
+        ["K1_3"]  = (530, 70),
+        ["K1_5"]  = (580, 70),
+        ["K1_A1"] = (630, 70),
+        ["K1_2"]  = (480, 215),
+        ["K1_4"]  = (530, 215),
+        ["K1_6"]  = (580, 215),
+        ["K1_A2"] = (630, 215),
+
+        // X2 Moottorilähtö: comp-x2 at left: 690px, top: 60px
+        ["X2_U1"] = (725, 215),
+        ["X2_V1"] = (775, 215),
+        ["X2_W1"] = (825, 215),
+        ["X2_PE"] = (875, 215)
+    };
+
+    private void SelectActiveRule(int index)
+    {
+        activeRuleIndex = index;
+        if (ActiveRule != null)
+        {
+            selectedColor = ActiveRule.ColorHex;
+        }
+    }
+
+    private void ClickTerminal(string termId)
+    {
+        if (selectedTerminalId == null)
+        {
+            selectedTerminalId = termId;
+            try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+        }
+        else if (selectedTerminalId == termId)
+        {
+            selectedTerminalId = null; // deselect
+            try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+        }
+        else
+        {
+            // Connect selected screw and clicked screw
+            AddWire(selectedTerminalId, termId, selectedColor);
+            selectedTerminalId = null;
+
+            // Advance active rule to next unfinished rule
+            AdvanceToNextUnfinishedRule();
+        }
+    }
+
+    private void HoverTerminal(string termId) => hoverTerminalId = termId;
+
+    private void AddWire(string from, string to, string color)
+    {
+        // Don't add duplicate wire
+        if (IsConnectionMade(from, to)) return;
+
+        connectedWires.Add(new WireConnection(from, to, color));
+        try { JS.InvokeVoidAsync("GameAudio.playTick"); } catch { }
+    }
+
+    private void AutoConnectRule(WiringRule rule)
+    {
+        AddWire(rule.FromId, rule.ToId, rule.ColorHex);
+        AdvanceToNextUnfinishedRule();
+    }
+
+    private void AutoWireAll()
+    {
+        connectedWires.Clear();
+        foreach (var rule in connectionRules)
+        {
+            connectedWires.Add(new WireConnection(rule.FromId, rule.ToId, rule.ColorHex));
+        }
+        try { JS.InvokeVoidAsync("GameAudio.playSuccess"); } catch { }
+        activeRuleIndex = -1;
+    }
+
+    private void RemoveConnection(string fromId, string toId)
+    {
+        connectedWires.RemoveAll(w => (w.FromId == fromId && w.ToId == toId) || (w.FromId == toId && w.ToId == fromId));
+        try { JS.InvokeVoidAsync("GameAudio.playMiss"); } catch { }
+    }
+
+    private void RemoveWire(WireConnection wire)
+    {
+        connectedWires.Remove(wire);
+        try { JS.InvokeVoidAsync("GameAudio.playMiss"); } catch { }
+    }
+
+    private void ClearAllWires()
+    {
+        connectedWires.Clear();
+        activeRuleIndex = 0;
+    }
+
+    private void AdvanceToNextUnfinishedRule()
+    {
+        for (int i = 0; i < connectionRules.Count; i++)
+        {
+            if (!IsConnectionMade(connectionRules[i].FromId, connectionRules[i].ToId))
+            {
+                activeRuleIndex = i;
+                selectedColor = connectionRules[i].ColorHex;
+                return;
+            }
+        }
+        activeRuleIndex = -1;
+    }
+
+    private bool IsConnectionMade(string fromId, string toId) =>
+        connectedWires.Any(w => (w.FromId == fromId && w.ToId == toId) || (w.FromId == toId && w.ToId == fromId));
+
+    private bool IsScrewActiveTarget(string termId, out (string Text, string Type) label)
+    {
+        if (selectedTerminalId == termId)
+        {
+            label = ("✔ VALITTU", "selected");
+            return true;
+        }
+
+        if (ActiveRule != null && !IsConnectionMade(ActiveRule.FromId, ActiveRule.ToId))
+        {
+            if (ActiveRule.FromId == termId)
+            {
+                label = ("1. ALKU", "start");
+                return true;
+            }
+            if (ActiveRule.ToId == termId)
+            {
+                label = ("2. KOHDE", "end");
+                return true;
+            }
+        }
+
+        label = ("", "");
+        return false;
+    }
+
+    private string GetTerminalClass(string termId)
+    {
+        if (selectedTerminalId == termId) return "term-selected";
+
+        if (ActiveRule != null && !IsConnectionMade(ActiveRule.FromId, ActiveRule.ToId))
+        {
+            if (ActiveRule.FromId == termId) return "term-active-start";
+            if (ActiveRule.ToId == termId) return "term-active-end";
+        }
+
+        return "";
+    }
+
+    private string GetColorName(string hex) =>
+        availableColors.FirstOrDefault(c => c.Hex == hex)?.Name ?? hex;
+
+    private (int X, int Y) GetTerminalPos(string termId) =>
+        terminalCoords.TryGetValue(termId, out var pos) ? pos : (100, 100);
+
+    private string GetWirePath((int X, int Y) p1, (int X, int Y) p2)
+    {
+        int dx = p2.X - p1.X;
+        int dy = p2.Y - p1.Y;
+        
+        // Arc curves downwards for bottom terminals and upwards for top terminals
+        int ctrlY;
+        if (p1.Y >= 180 && p2.Y >= 180)
+        {
+            ctrlY = Math.Max(p1.Y, p2.Y) + 60 + Math.Abs(dx) / 10;
+        }
+        else if (p1.Y <= 120 && p2.Y <= 120)
+        {
+            ctrlY = Math.Min(p1.Y, p2.Y) - 50 - Math.Abs(dx) / 10;
+        }
+        else
+        {
+            ctrlY = (p1.Y + p2.Y) / 2 + 40;
+        }
+
+        return $"M {p1.X} {p1.Y} Q {(p1.X + p2.X)/2} {ctrlY} {p2.X} {p2.Y}";
+    }
+
+    private async Task RunPowerTest()
+    {
+        isTested = true;
+        int correctMatches = 0;
+        int missingCount = 0;
+        int wrongWires = 0;
+
+        foreach (var rule in connectionRules)
+        {
+            if (IsConnectionMade(rule.FromId, rule.ToId))
+            {
+                correctMatches++;
+            }
+            else
+            {
+                missingCount++;
+            }
+        }
+
+        foreach (var wire in connectedWires)
+        {
+            if (!connectionRules.Any(r => (r.FromId == wire.FromId && r.ToId == wire.ToId) || (r.FromId == wire.ToId && r.ToId == wire.FromId)))
+            {
+                wrongWires++;
+            }
+        }
+
+        float precision = Math.Clamp((float)correctMatches / connectionRules.Count * 100f - (wrongWires * 15f), 0f, 100f);
+
+        if (precision >= 90f)
+        {
+            testSuccess = true;
+            testFeedback = "✔ KAIKKI VAIHEET JA OHJAUS KYTKETTY OIKEIN! Moottori käynnistyy moitteetta.";
+            try { await JS.InvokeVoidAsync("GameAudio.playSuccess"); } catch { }
+        }
+        else
+        {
+            testSuccess = false;
+            testFeedback = missingCount > 0 
+                ? $"⚠ KOESTUS HYLÄTTY: {missingCount} johdinta puuttuu tai väärässä navassa!" 
+                : $"⚠ KOESTUS HYLÄTTY: Piirissä on {wrongWires} virheellistä kytkentää!";
+            try { await JS.InvokeVoidAsync("GameAudio.playMiss"); } catch { }
+        }
+
+        _ = Task.Delay(1300).ContinueWith(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                FinishGame(precision);
+            });
+        });
+    }
+
+    private void FinishGame(float precision)
+    {
+        isGameOver = true;
+        string grade = precision >= 90f ? "perfect" : precision >= 60f ? "good" : "fail";
+        double basePay = CurrentGig != null ? (CurrentGig.PayMin + CurrentGig.PayMax) / 2.0 : 250.0;
+        double payout = grade switch
+        {
+            "perfect" => basePay * 1.25,
+            "good" => basePay,
+            _ => basePay * 0.4
+        };
+
+        int xp = grade switch
+        {
+            "perfect" => 130,
+            "good" => 75,
+            _ => 20
+        };
+
+        int repDelta = grade switch
+        {
+            "perfect" => 6,
+            "good" => 1,
+            _ => -8
+        };
+
+        finalResult = new MinigameResult(precision, grade, xp, repDelta, payout);
+        StateHasChanged();
+    }
+
+    private Task SubmitResult() => finalResult != null ? OnComplete.InvokeAsync(finalResult) : Task.CompletedTask;
+    private Task AbortGame() => OnCancel.InvokeAsync();
+}

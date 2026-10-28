@@ -1,0 +1,32 @@
+version: '3'
+
+vars:
+  CLIENT: ClickerGame.Client/ClickerGame.Client.csproj
+  SLN: ClickerGame.sln
+
+tasks:
+  default:
+    desc: "Käynnistää Blazor dev-palvelimen"
+    cmds: [task: dev]
+
+  dev:
+    desc: "Käynnistää Blazor WASM kehityspalvelimen"
+    cmds:
+      - dotnet watch run --project {{.CLIENT}}
+
+  build:
+    desc: "Kääntää Blazor WASM julkaisuversioksi"
+    aliases: [b]
+    cmds:
+      - dotnet build {{.SLN}}
+
+  restore:
+    desc: "Palauttaa NuGet-paketit"
+    cmds:
+      - dotnet restore {{.SLN}}
+
+  check:
+    desc: "Koko tarkistussykli: restore + build"
+    cmds:
+      - task: restore
+      - task: build

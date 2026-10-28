@@ -1,0 +1,817 @@
+@namespace ClickerGame.Client.Components
+@using ClickerGame.Client.Models
+
+<div class="week-calendar industrial-card">
+    <!-- Calendar Toolbar / Header -->
+    <div class="calendar-toolbar">
+        <div class="toolbar-title-group">
+            <span class="toolbar-icon">📅</span>
+            <div>
+                <h3 class="toolbar-title font-heading">VIIKKOSUUNNITELMA // 7-PÄIVÄN KALENTERI</h3>
+                <p class="toolbar-sub">Suunnittele viikon keikat, lepopäivät ja koulutukset. Monipäiväiset urakat lukitsevat useita päiviä.</p>
+            </div>
+        </div>
+
+        <div class="toolbar-actions">
+            @if (SelectedGigToAssign != null)
+            {
+                <div class="assign-mode-banner">
+                    <span class="blink-dot"></span>
+                    <span class="assign-text">Valittu keikka: <strong>@SelectedGigToAssign.ClientName</strong> (@SelectedGigToAssign.DurationDays pv)</span>
+                    <button class="btn-cancel-assign" @onclick="CancelAssignMode">✕ Peruuta</button>
+                </div>
+            }
+            <div class="calendar-legend">
+                <span class="legend-item"><span class="legend-dot dot-gig"></span> Keikka</span>
+                <span class="legend-item"><span class="legend-dot dot-rest"></span> Lepo</span>
+                <span class="legend-item"><span class="legend-dot dot-edu"></span> Koulutus</span>
+                <span class="legend-item"><span class="legend-dot dot-burnout"></span> Ylirasitus</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7-Day Grid -->
+    <div class="calendar-grid">
+        @foreach (var dayKey in DaysOfWeek)
+        {
+            var isCurrent = dayKey == CurrentDay;
+            var isPast = IsDayPast(dayKey);
+            var slot = GetSlot(dayKey);
+            var gig = GetGigForSlot(slot);
+            var multiDayInfo = GetMultiDayProgress(dayKey, slot);
+
+            <div class="day-cell @GetDayCellClass(slot, isCurrent, isPast)" @onclick="() => HandleDayClick(dayKey)">
+                <!-- Day Header -->
+                <div class="day-cell-header">
+                    <div class="day-info">
+                        <span class="day-code font-heading">@dayKey</span>
+                        <span class="day-name">@GetDayShortName(dayKey)</span>
+                    </div>
+
+                    @if (isCurrent)
+                    {
+                        <span class="current-day-badge font-mono">TÄNÄÄN</span>
+                    }
+                    else if (isPast)
+                    {
+                        <span class="past-badge">MENNYT</span>
+                    }
+                </div>
+
+                <!-- Day Cell Body (State visualization) -->
+                <div class="day-cell-content">
+                    @switch (slot.Type)
+                    {
+                        case "gig" when gig != null:
+                            <div class="slot-gig">
+                                <div class="slot-gig-top">
+                                    <span class="tier-badge tier-badge-@gig.Tier">T@gig.Tier</span>
+                                    @if (multiDayInfo.TotalDays > 1)
+                                    {
+                                        <span class="multiday-badge font-mono">
+                                            PÄIVÄ @multiDayInfo.CurrentDay/@multiDayInfo.TotalDays
+                                        </span>
+                                    }
+                                </div>
+                                <h4 class="gig-client-name" title="@gig.ClientName">@gig.ClientName</h4>
+                                <div class="gig-pay-range font-mono">
+                                    @gig.PayMin.ToString("0") - @gig.PayMax.ToString("0") €
+                                </div>
+
+                                @if (!isPast && !string.IsNullOrEmpty(slot.GigId))
+                                {
+                                    <div class="slot-actions">
+                                        @if (isCurrent)
+                                        {
+                                            <button class="btn-industrial btn-industrial-cyan btn-sm btn-execute" 
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => ExecuteDay(dayKey)">
+                                                ⚡ ALOITA PÄIVÄ
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn-clear-slot" 
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => ClearSlot(dayKey)" title="Tyhjennä varaus">
+                                                ✕
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            break;
+
+                        case "rest":
+                            <div class="slot-rest">
+                                <div class="rest-icon">☕</div>
+                                <div class="rest-title font-heading">LEPOPÄIVÄ</div>
+                                <div class="rest-recovery font-mono text-success">+40 STAMINA</div>
+                                <div class="rest-cost font-mono">0 €</div>
+                                @if (!isPast)
+                                {
+                                    @if (isCurrent)
+                                    {
+                                        <button class="btn-industrial btn-industrial-amber btn-sm btn-execute"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => ExecuteDay(dayKey)">
+                                            💤 LEPÄÄ HETI
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn-clear-slot" 
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => ClearSlot(dayKey)">✕</button>
+                                    }
+                                }
+                            </div>
+                            break;
+
+                        case "education":
+                            <div class="slot-edu">
+                                <div class="edu-icon">📜</div>
+                                <div class="edu-title font-heading">KOULUTUS</div>
+                                <div class="edu-course">@(slot.CourseName ?? "Sähköturvallisuus")</div>
+                                <div class="edu-cost font-mono text-warning">-250 €</div>
+                                @if (!isPast)
+                                {
+                                    <button class="btn-clear-slot" 
+                                            @onclick:stopPropagation="true"
+                                            @onclick="() => ClearSlot(dayKey)">✕</button>
+                                }
+                            </div>
+                            break;
+
+                        case "burnout":
+                            <div class="slot-burnout hazard-stripe">
+                                <div class="burnout-icon">⚠️</div>
+                                <div class="burnout-title font-heading">BURNOUT</div>
+                                <div class="burnout-desc">PAKKOPYSÄHDYS! 0 Stamina.</div>
+                                <div class="burnout-pen font-mono text-danger">KULUT JUOKSEVAT</div>
+                            </div>
+                            break;
+
+                        default: // "empty"
+                            <div class="slot-empty">
+                                @if (SelectedGigToAssign != null)
+                                {
+                                    <button class="btn-place-gig" @onclick:stopPropagation="true" @onclick="() => AssignSelectedGig(dayKey)">
+                                        <span class="plus-icon">+</span>
+                                        <span class="place-text">Sijoita tähän</span>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="empty-hint">VAPAA PÄIVÄ</span>
+                                    @if (!isPast)
+                                    {
+                                        <div class="empty-quick-actions">
+                                            <button class="btn-quick-action" 
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick='() => SetQuickAction(dayKey, "rest")' title="Aseta lepopäivä">
+                                                💤 Lepo
+                                            </button>
+                                            @if (isCurrent)
+                                            {
+                                                <button class="btn-quick-action btn-quick-today"
+                                                        @onclick:stopPropagation="true"
+                                                        @onclick='() => SetQuickAction(dayKey, "rest")'>
+                                                    Suorita
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </div>
+                            break;
+                    }
+
+                    <!-- Past Result Stamp -->
+                    @if (slot.Result != null)
+                    {
+                        <div class="result-stamp stamp-@slot.Result.Grade.ToLower()">
+                            <div class="stamp-grade">
+                                @(slot.Result.Grade.ToLower() switch {
+                                    "perfect" => "★ TÄYDELLINEN",
+                                    "good" => "✔ HYVÄKSYTTY",
+                                    _ => "✖ HYLÄTTY"
+                                })
+                            </div>
+                            <div class="stamp-details font-mono">
+                                <span>+@slot.Result.PayEur.ToString("0") €</span>
+                                <span>+@slot.Result.XpGained XP</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Bottom Connector for multi-day continuity -->
+                @if (multiDayInfo.TotalDays > 1 && multiDayInfo.CurrentDay < multiDayInfo.TotalDays)
+                {
+                    <div class="multi-day-connector-bar">
+                        <span class="connector-glow"></span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+.week-calendar {
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.calendar-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.85rem;
+}
+
+.toolbar-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.toolbar-icon {
+    font-size: 1.5rem;
+}
+
+.toolbar-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 0.05em;
+    color: #ffffff;
+}
+
+.toolbar-sub {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.assign-mode-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 212, 255, 0.15);
+    border: 1px dashed var(--cyan-primary);
+    padding: 0.3rem 0.75rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    color: var(--cyan-primary);
+}
+
+.blink-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--cyan-primary);
+    box-shadow: 0 0 6px var(--cyan-glow);
+    animation: blink-anim 1s infinite alternate;
+}
+
+@@keyframes blink-anim {
+    from { opacity: 0.3; }
+    to { opacity: 1; }
+}
+
+.btn-cancel-assign {
+    background: none;
+    border: none;
+    color: #cbd5e1;
+    font-size: 0.75rem;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.calendar-legend {
+    display: flex;
+    gap: 0.85rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+}
+
+.dot-gig { background: var(--amber-primary); }
+.dot-rest { background: var(--success-green); }
+.dot-edu { background: #38bdf8; }
+.dot-burnout { background: var(--danger-red); }
+
+/* Grid */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.65rem;
+    min-height: 230px;
+}
+
+@@media (max-width: 1100px) {
+    .calendar-grid {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    }
+}
+
+.day-cell {
+    background: #121724;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+    min-height: 190px;
+    position: relative;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.day-cell:hover {
+    border-color: var(--border-highlight);
+    background: #161c2c;
+}
+
+.cell-current {
+    border-color: var(--cyan-primary) !important;
+    box-shadow: 0 0 14px rgba(0, 212, 255, 0.25), inset 0 0 10px rgba(0, 212, 255, 0.05);
+}
+
+.cell-past {
+    opacity: 0.65;
+    background: #0d101a;
+}
+
+.cell-burnout {
+    border-color: var(--danger-red) !important;
+}
+
+/* Day Header */
+.day-cell-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.45rem 0.6rem;
+    background: rgba(0, 0, 0, 0.25);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.day-info {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+}
+
+.day-code {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.day-name {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.current-day-badge {
+    background: var(--cyan-primary);
+    color: #000000;
+    font-weight: 700;
+    font-size: 0.62rem;
+    padding: 1px 4px;
+    border-radius: 2px;
+    letter-spacing: 0.05em;
+}
+
+.past-badge {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+}
+
+/* Cell Content */
+.day-cell-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0.6rem;
+    position: relative;
+    justify-content: space-between;
+}
+
+/* Slot Types */
+.slot-gig {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    height: 100%;
+}
+
+.slot-gig-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.multiday-badge {
+    font-size: 0.62rem;
+    color: var(--amber-primary);
+    background: rgba(245, 158, 11, 0.1);
+    padding: 1px 4px;
+    border-radius: 2px;
+}
+
+.gig-client-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0;
+    color: #f1f5f9;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.gig-pay-range {
+    font-size: 0.82rem;
+    color: #4ade80;
+    font-weight: 700;
+}
+
+.btn-execute {
+    width: 100%;
+    margin-top: auto;
+    font-size: 0.72rem;
+    padding: 0.35rem 0.5rem;
+}
+
+.btn-clear-slot {
+    align-self: flex-end;
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 2px;
+    cursor: pointer;
+    margin-top: auto;
+}
+
+.btn-clear-slot:hover {
+    color: var(--danger-red);
+    border-color: var(--danger-red);
+}
+
+/* Rest */
+.slot-rest {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    height: 100%;
+    text-align: center;
+}
+
+.rest-icon {
+    font-size: 1.4rem;
+}
+
+.rest-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--success-green);
+}
+
+.rest-recovery {
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.rest-cost {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+/* Edu */
+.slot-edu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    text-align: center;
+    height: 100%;
+}
+
+.edu-icon { font-size: 1.3rem; }
+.edu-title { font-size: 0.8rem; color: #38bdf8; font-weight: 700; }
+.edu-course { font-size: 0.72rem; color: var(--text-secondary); }
+.edu-cost { font-size: 0.72rem; }
+
+/* Burnout */
+.slot-burnout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    height: 100%;
+    padding: 0.5rem;
+    border-radius: 2px;
+}
+
+.burnout-icon { font-size: 1.5rem; }
+.burnout-title { font-size: 0.85rem; color: var(--danger-red); font-weight: 700; }
+.burnout-desc { font-size: 0.65rem; color: #fca5a5; line-height: 1.2; }
+.burnout-pen { font-size: 0.62rem; margin-top: 0.3rem; }
+
+/* Empty */
+.slot-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 100%;
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+    padding: 0.5rem;
+}
+
+.empty-hint {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+}
+
+.empty-quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    width: 100%;
+}
+
+.btn-quick-action {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    padding: 2px 4px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.btn-quick-action:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+.btn-quick-today {
+    border-color: var(--cyan-primary);
+    color: var(--cyan-primary);
+}
+
+.btn-place-gig {
+    background: rgba(0, 212, 255, 0.15);
+    border: 1px dashed var(--cyan-primary);
+    color: var(--cyan-primary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.6rem 0.4rem;
+    width: 100%;
+    cursor: pointer;
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s;
+}
+
+.btn-place-gig:hover {
+    background: rgba(0, 212, 255, 0.25);
+    box-shadow: 0 0 10px var(--cyan-glow);
+}
+
+/* Stamps for completed */
+.result-stamp {
+    position: absolute;
+    inset: 4px;
+    background: rgba(12, 16, 24, 0.94);
+    border: 2px dashed #94a3b8;
+    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    text-align: center;
+    padding: 0.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+}
+
+.stamp-perfect {
+    border-color: #fbbf24;
+    color: #fbbf24;
+}
+
+.stamp-good {
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+.stamp-fail {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.stamp-grade {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+}
+
+.stamp-details {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.72rem;
+    color: #e2e8f0;
+}
+</style>
+
+@code {
+    [Parameter, EditorRequired]
+    public WeekPlan Plan { get; set; } = default!;
+
+    [Parameter]
+    public string CurrentDay { get; set; } = "MA";
+
+    [Parameter]
+    public List<Gig> AvailableGigs { get; set; } = new();
+
+    [Parameter]
+    public Gig? SelectedGigToAssign { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnDaySelected { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnExecuteDay { get; set; }
+
+    [Parameter]
+    public EventCallback<(string DayKey, Gig Gig)> OnAssignGig { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnClearSlot { get; set; }
+
+    [Parameter]
+    public EventCallback<(string DayKey, string ActionType)> OnQuickAction { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancelAssign { get; set; }
+
+    private readonly string[] DaysOfWeek = ["MA", "TI", "KE", "TO", "PE", "LA", "SU"];
+
+    private WeekSlot GetSlot(string dayKey)
+    {
+        if (Plan.Days.TryGetValue(dayKey, out var slot))
+        {
+            return slot;
+        }
+        return new WeekSlot("empty");
+    }
+
+    private Gig? GetGigForSlot(WeekSlot slot)
+    {
+        if (slot.Type == "gig" && !string.IsNullOrEmpty(slot.GigId))
+        {
+            return AvailableGigs.FirstOrDefault(g => g.Id == slot.GigId);
+        }
+        return null;
+    }
+
+    private bool IsDayPast(string dayKey)
+    {
+        var currentIndex = Array.IndexOf(DaysOfWeek, CurrentDay);
+        var targetIndex = Array.IndexOf(DaysOfWeek, dayKey);
+        return targetIndex < currentIndex;
+    }
+
+    private string GetDayShortName(string dayKey) => dayKey switch
+    {
+        "MA" => "Ma",
+        "TI" => "Ti",
+        "KE" => "Ke",
+        "TO" => "To",
+        "PE" => "Pe",
+        "LA" => "La",
+        "SU" => "Su",
+        _ => dayKey
+    };
+
+    private string GetDayCellClass(WeekSlot slot, bool isCurrent, bool isPast)
+    {
+        var classes = new List<string>();
+        if (isCurrent) classes.Add("cell-current");
+        if (isPast) classes.Add("cell-past");
+        if (slot.Type == "burnout") classes.Add("cell-burnout");
+        return string.Join(" ", classes);
+    }
+
+    private (int CurrentDay, int TotalDays) GetMultiDayProgress(string dayKey, WeekSlot slot)
+    {
+        if (slot.Type != "gig" || string.IsNullOrEmpty(slot.GigId))
+        {
+            return (1, 1);
+        }
+
+        var gig = AvailableGigs.FirstOrDefault(g => g.Id == slot.GigId);
+        if (gig == null || gig.DurationDays <= 1)
+        {
+            return (1, 1);
+        }
+
+        int step = 1;
+        for (int i = 0; i < DaysOfWeek.Length; i++)
+        {
+            var key = DaysOfWeek[i];
+            if (Plan.Days.TryGetValue(key, out var s) && s.GigId == slot.GigId)
+            {
+                if (key == dayKey)
+                {
+                    return (step, gig.DurationDays);
+                }
+                step++;
+            }
+        }
+
+        return (1, gig.DurationDays);
+    }
+
+    private async Task HandleDayClick(string dayKey)
+    {
+        if (SelectedGigToAssign != null)
+        {
+            await AssignSelectedGig(dayKey);
+            return;
+        }
+        await OnDaySelected.InvokeAsync(dayKey);
+    }
+
+    private async Task AssignSelectedGig(string dayKey)
+    {
+        if (SelectedGigToAssign != null)
+        {
+            await OnAssignGig.InvokeAsync((dayKey, SelectedGigToAssign));
+        }
+    }
+
+    private async Task ExecuteDay(string dayKey)
+    {
+        await OnExecuteDay.InvokeAsync(dayKey);
+    }
+
+    private async Task ClearSlot(string dayKey)
+    {
+        await OnClearSlot.InvokeAsync(dayKey);
+    }
+
+    private async Task SetQuickAction(string dayKey, string actionType)
+    {
+        await OnQuickAction.InvokeAsync((dayKey, actionType));
+    }
+
+    private async Task CancelAssignMode()
+    {
+        await OnCancelAssign.InvokeAsync();
+    }
+}

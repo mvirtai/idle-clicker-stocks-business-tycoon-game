@@ -1,0 +1,350 @@
+@namespace ClickerGame.Client.Components
+@inject IJSRuntime JS
+
+<div class="day-night-control @GetThemeClass()" title="Vuorokausirytmi ja teeman hallinta">
+    <!-- In-Game Digital Clock Display -->
+    <div class="clock-display font-mono" title="Pelikellonaika: @FormatTime()">
+        <span class="clock-icon">🕒</span>
+        <span class="clock-digits">@FormatTime()</span>
+    </div>
+
+    <!-- Active Atmospheric Mode Badge / Quick Cycle Button -->
+    <button class="phase-cycle-btn focus:outline-none"
+            @onclick="CycleMode"
+            title="Klikkaa vaihtaaksesi: Auto 🔄 -> Päivä ☀️ -> Iltarusko 🌅 -> Yö 🌙">
+        <span class="phase-icon">@GetPhaseIcon()</span>
+        <span class="phase-name font-mono font-bold">@GetPhaseTitle()</span>
+        @if (currentMode == "auto")
+        {
+            <span class="auto-badge font-mono">AUTO</span>
+        }
+    </button>
+
+    <!-- Quick Mini Selectors (Day, Dusk, Night, Auto) -->
+    <div class="mini-selectors">
+        <button class="mini-btn @(currentMode == "auto" ? "mini-active-auto" : "")"
+                @onclick='() => SetMode("auto")'
+                title="Automaattinen vuorokausirytmi (vaihtuu kellonajan mukaan)">
+            🔄
+        </button>
+        <button class="mini-btn @(effectiveTheme == "light" && currentMode != "auto" ? "mini-active-day" : "")"
+                @onclick='() => SetMode("light")'
+                title="Lukitse: Kirkas Päivätila (07:00 - 16:00)">
+            ☀️
+        </button>
+        <button class="mini-btn @(effectiveTheme == "dusk" && currentMode != "auto" ? "mini-active-dusk" : "")"
+                @onclick='() => SetMode("dusk")'
+                title="Lukitse: Iltarusko / Kultainen tunti (16:00 - 21:00)">
+            🌅
+        </button>
+        <button class="mini-btn @(effectiveTheme == "dark" && currentMode != "auto" ? "mini-active-night" : "")"
+                @onclick='() => SetMode("dark")'
+                title="Lukitse: Cyber Neon Yötila (21:00 - 07:00)">
+            🌙
+        </button>
+    </div>
+</div>
+
+<style>
+.day-night-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 9999px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    transition: all 0.5s ease;
+    user-select: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.day-night-control.theme-light {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.2);
+}
+
+.day-night-control.theme-dusk {
+    background: rgba(30, 27, 54, 0.92);
+    border-color: rgba(245, 158, 11, 0.5);
+    box-shadow: 0 4px 16px rgba(244, 63, 94, 0.25);
+}
+
+.day-night-control.theme-dark {
+    background: rgba(8, 12, 22, 0.9);
+    border-color: rgba(6, 182, 212, 0.4);
+    box-shadow: 0 4px 16px rgba(6, 182, 212, 0.2);
+}
+
+.clock-display {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.theme-light .clock-display {
+    background: rgba(241, 245, 249, 0.9);
+    border-color: rgba(203, 213, 225, 0.8);
+    color: #0f172a;
+}
+
+.theme-dusk .clock-display {
+    background: rgba(20, 18, 38, 0.8);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #fef08a;
+}
+
+.theme-dark .clock-display {
+    color: #67e8f9;
+}
+
+.clock-digits {
+    letter-spacing: 0.04em;
+}
+
+.phase-cycle-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 9999px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    transition: transform 0.2s;
+}
+
+.phase-cycle-btn:hover {
+    transform: scale(1.04);
+}
+
+.phase-name {
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+}
+
+.theme-light .phase-name {
+    color: #b45309;
+}
+
+.theme-dusk .phase-name {
+    color: #f43f5e;
+}
+
+.theme-dark .phase-name {
+    color: #38bdf8;
+}
+
+.auto-badge {
+    font-size: 0.6rem;
+    font-weight: 800;
+    padding: 0.05rem 0.3rem;
+    border-radius: 4px;
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.mini-selectors {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding-left: 0.2rem;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theme-light .mini-selectors {
+    border-left-color: rgba(203, 213, 225, 0.8);
+}
+
+.mini-btn {
+    width: 20px;
+    height: 20px;
+    font-size: 0.65rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: all 0.2s;
+    line-height: 1;
+}
+
+.mini-btn:hover {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
+.mini-active-auto {
+    opacity: 1;
+    background: rgba(16, 185, 129, 0.25);
+    border-color: #10b981;
+}
+
+.mini-active-day {
+    opacity: 1;
+    background: rgba(245, 158, 11, 0.25);
+    border-color: #f59e0b;
+}
+
+.mini-active-dusk {
+    opacity: 1;
+    background: rgba(244, 63, 94, 0.25);
+    border-color: #f43f5e;
+}
+
+.mini-active-night {
+    opacity: 1;
+    background: rgba(6, 182, 212, 0.25);
+    border-color: #06b6d4;
+}
+
+@@media (max-width: 640px) {
+    .phase-name {
+        display: none;
+    }
+}
+</style>
+
+@code {
+    [Parameter]
+    public int Hour { get; set; } = 9;
+
+    [Parameter]
+    public int Minute { get; set; } = 0;
+
+    [Parameter]
+    public EventCallback<string> OnThemeModeChanged { get; set; }
+
+    private string currentMode = "auto";
+    private string effectiveTheme = "dark";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (currentMode == "auto")
+        {
+            try
+            {
+                var result = await JS.InvokeAsync<string>("ThemeManager.getTheme");
+                if (result != effectiveTheme)
+                {
+                    effectiveTheme = result;
+                    StateHasChanged();
+                }
+            }
+            catch { }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                currentMode = await JS.InvokeAsync<string>("ThemeManager.getThemeMode");
+                effectiveTheme = await JS.InvokeAsync<string>("ThemeManager.getTheme");
+                await JS.InvokeVoidAsync("ThemeManager.setTimeOfDay", Hour, Minute);
+                StateHasChanged();
+            }
+            catch { }
+        }
+    }
+
+    private string FormatTime()
+    {
+        return $"{Hour:D2}:{Minute:D2}";
+    }
+
+    private string GetPhaseIcon()
+    {
+        return effectiveTheme switch
+        {
+            "light" => "☀️",
+            "dusk" => "🌅",
+            _ => "🌙"
+        };
+    }
+
+    private string GetPhaseTitle()
+    {
+        return effectiveTheme switch
+        {
+            "light" => "PÄIVÄ",
+            "dusk" => "ILTARUSKO",
+            _ => "YÖKERHO"
+        };
+    }
+
+    private string GetThemeClass()
+    {
+        return effectiveTheme switch
+        {
+            "light" => "theme-light",
+            "dusk" => "theme-dusk",
+            _ => "theme-dark"
+        };
+    }
+
+    private async Task CycleMode()
+    {
+        try
+        {
+            // Cycle sequence: auto -> light -> dusk -> dark -> auto
+            currentMode = currentMode switch
+            {
+                "auto" => "light",
+                "light" => "dusk",
+                "dusk" => "dark",
+                _ => "auto"
+            };
+
+            await JS.InvokeVoidAsync("ThemeManager.setThemeMode", currentMode);
+            effectiveTheme = await JS.InvokeAsync<string>("ThemeManager.getTheme");
+            try
+            {
+                await JS.InvokeVoidAsync("GameAudio.playThemeSwitch", currentMode == "auto" ? "auto" : effectiveTheme);
+            }
+            catch { }
+
+            if (OnThemeModeChanged.HasDelegate)
+            {
+                await OnThemeModeChanged.InvokeAsync(effectiveTheme);
+            }
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task SetMode(string mode)
+    {
+        try
+        {
+            currentMode = mode;
+            await JS.InvokeVoidAsync("ThemeManager.setThemeMode", mode);
+            effectiveTheme = await JS.InvokeAsync<string>("ThemeManager.getTheme");
+            try
+            {
+                await JS.InvokeVoidAsync("GameAudio.playThemeSwitch", mode == "auto" ? "auto" : effectiveTheme);
+            }
+            catch { }
+
+            if (OnThemeModeChanged.HasDelegate)
+            {
+                await OnThemeModeChanged.InvokeAsync(effectiveTheme);
+            }
+            StateHasChanged();
+        }
+        catch { }
+    }
+}

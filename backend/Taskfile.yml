@@ -1,0 +1,43 @@
+version: '3'
+
+vars:
+  SERVER: ./cmd/server
+
+tasks:
+  default:
+    desc: "Ajaa backend-palvelimen"
+    cmds: [task: dev]
+
+  dev:
+    desc: "Käynnistää Go-palvelimen (hot-reload: käytä air jos asennettu)"
+    cmds:
+      - go run {{.SERVER}}/main.go
+
+  build:
+    desc: "Kääntää Go-binäärin"
+    aliases: [b]
+    cmds:
+      - go build -o bin/server {{.SERVER}}/main.go
+
+  test:
+    desc: "Ajaa kaikki Go-yksikkötestit"
+    aliases: [t]
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: "Ajaa golangci-lint (vaatii asennuksen)"
+    cmds:
+      - golangci-lint run ./...
+
+  tidy:
+    desc: "go mod tidy"
+    cmds:
+      - go mod tidy
+
+  check:
+    desc: "Koko tarkistussykli: tidy + build + test"
+    cmds:
+      - task: tidy
+      - task: build
+      - task: test

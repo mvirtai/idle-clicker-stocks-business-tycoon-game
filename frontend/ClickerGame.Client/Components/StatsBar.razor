@@ -1,0 +1,423 @@
+@namespace ClickerGame.Client.Components
+@using ClickerGame.Client.Models
+
+<header class="stats-bar industrial-card">
+    <!-- Brand / Title / Finnish Role -->
+    <div class="stats-brand">
+        <div class="brand-title">
+            <span class="brand-logo-icon">⚡</span>
+            <span class="brand-name">FROM GIGS TO GIANTS</span>
+        </div>
+        <div class="brand-subtitle">
+            <span class="led-indicator @(Player.Stamina > 20 ? "led-cyan" : "led-red")"></span>
+            <span class="role-text">
+                @(Company != null ? $"{Company.Name} (Yritys)" : "KENTTÄASENTAJA // FREELANCER")
+            </span>
+            <span class="week-pill font-mono">VK @Player.Week • @GetDayFullName(Player.DayOfWeek)</span>
+        </div>
+    </div>
+
+    <!-- Stamina Gauge (Pneumatic / Battery Industrial Style) -->
+    <div class="stat-cluster stamina-cluster">
+        <div class="cluster-label">
+            <span class="label-text">STAMINA / JALUSTA</span>
+            <span class="value-readout font-mono @GetStaminaColorClass()">
+                @Math.Round(Player.Stamina, 0)%
+            </span>
+        </div>
+        <div class="stamina-gauge-frame">
+            <div class="stamina-fill @GetStaminaBarClass()" style="width: @(Math.Clamp(Player.Stamina, 0, 100))%">
+                <div class="stamina-shimmer"></div>
+            </div>
+            <!-- Battery / Scale tick marks -->
+            <div class="gauge-ticks">
+                <span class="tick"></span>
+                <span class="tick"></span>
+                <span class="tick"></span>
+                <span class="tick"></span>
+            </div>
+        </div>
+        @if (Player.Stamina <= 15)
+        {
+            <div class="burnout-warning">
+                <span class="hazard-dot"></span> VAARA: YLIRASITUS
+            </div>
+        }
+    </div>
+
+    <!-- Cash Meter (Digital Monospace Readout) -->
+    <div class="stat-cluster cash-cluster">
+        <div class="cluster-label">
+            <span class="label-text">KASSA / SALDO</span>
+            <span class="badge-curr">EUR €</span>
+        </div>
+        <div class="cash-readout font-mono">
+            <span class="currency-symbol">€</span>
+            <span class="cash-amount">@Player.Cash.ToString("N2", new System.Globalization.CultureInfo("fi-FI"))</span>
+        </div>
+    </div>
+
+    <!-- Personal Reputation (0-200) -->
+    <div class="stat-cluster rep-cluster">
+        <div class="cluster-label">
+            <span class="label-text">HENKILÖKOHTAINEN MAINE</span>
+            <span class="font-mono rep-fraction">@Player.PersonalRep / 200</span>
+        </div>
+        <div class="rep-bar-frame">
+            <div class="rep-fill" style="width: @(Math.Clamp((Player.PersonalRep / 200.0) * 100, 0, 100))%"></div>
+            <!-- Tier Threshold Markers at 25 (Tier 2), 100 (Tier 3) -->
+            <div class="rep-threshold t2" title="Tier 2 vaatimus: 25">T2</div>
+            <div class="rep-threshold t3" title="Tier 3 vaatimus: 100">T3</div>
+        </div>
+        <div class="rep-tier-label font-mono">
+            @GetRepRank(Player.PersonalRep)
+        </div>
+    </div>
+
+    <!-- Level & XP Segmented Progress -->
+    <div class="stat-cluster level-cluster">
+        <div class="cluster-label">
+            <span class="label-text">TASO @Player.Level</span>
+            <span class="font-mono xp-text">@Player.Xp / @GetRequiredXp(Player.Level) XP</span>
+        </div>
+        <div class="xp-bar-frame">
+            <div class="xp-fill" style="width: @(GetXpPercentage())%"></div>
+        </div>
+        <div class="certs-summary" title="@string.Join(", ", Player.Certifications)">
+            <span class="cert-icon">📜</span>
+            <span class="cert-count font-mono">@Player.Certifications.Count sertif.</span>
+        </div>
+    </div>
+
+    <!-- Quick Theme & Day-Night Clock Switcher -->
+    <div class="stat-cluster theme-cluster">
+        <ThemeToggle Hour="Player.CurrentHour" Minute="Player.CurrentMinute" OnThemeModeChanged="HandleThemeModeChanged" />
+    </div>
+</header>
+
+<style>
+.stats-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    padding: 0.75rem 1.25rem;
+    background: linear-gradient(180deg, #131b2e 0%, #0c101a 100%);
+    border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.06);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.stats-brand {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 210px;
+}
+
+.brand-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.brand-logo-icon {
+    font-size: 1.2rem;
+    color: var(--amber-primary);
+    filter: drop-shadow(0 0 6px var(--amber-glow));
+}
+
+.brand-name {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.1em;
+    color: #ffffff;
+    text-transform: uppercase;
+}
+
+.brand-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.week-pill {
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    color: var(--cyan-primary);
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-size: 0.7rem;
+}
+
+/* Clusters */
+.stat-cluster {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 150px;
+    flex: 1;
+}
+
+.theme-cluster {
+    min-width: auto;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.cluster-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+/* Stamina Gauge */
+.stamina-gauge-frame {
+    height: 14px;
+    background: #090c13;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
+}
+
+.stamina-fill {
+    height: 100%;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.stamina-fill-high {
+    background: linear-gradient(90deg, #059669 0%, #10b981 100%);
+    box-shadow: 0 0 8px var(--success-glow);
+}
+
+.stamina-fill-mid {
+    background: linear-gradient(90deg, #d97706 0%, #f59e0b 100%);
+    box-shadow: 0 0 8px var(--amber-glow);
+}
+
+.stamina-fill-low {
+    background: linear-gradient(90deg, #b91c1c 0%, #ef4444 100%);
+    box-shadow: 0 0 10px var(--danger-glow);
+    animation: pulse-danger 1s infinite alternate;
+}
+
+.stamina-shimmer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.gauge-ticks {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 25%;
+    pointer-events: none;
+}
+
+.gauge-ticks .tick {
+    width: 1px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.burnout-warning {
+    font-size: 0.65rem;
+    color: var(--danger-red);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.hazard-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--danger-red);
+    border-radius: 50%;
+    animation: pulse-danger 0.8s infinite;
+}
+
+/* Cash Readout */
+.cash-cluster {
+    min-width: 160px;
+}
+
+.cash-readout {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #4ade80;
+    text-shadow: 0 0 10px rgba(74, 222, 128, 0.35);
+    background: #090c13;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+}
+
+.currency-symbol {
+    font-size: 0.85rem;
+    color: #22c55e;
+    opacity: 0.8;
+}
+
+/* Reputation */
+.rep-bar-frame {
+    height: 8px;
+    background: #090c13;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    position: relative;
+    overflow: visible;
+}
+
+.rep-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #38bdf8 0%, #00d4ff 100%);
+    box-shadow: 0 0 6px var(--cyan-glow);
+    border-radius: 1px;
+    transition: width 0.3s ease;
+}
+
+.rep-threshold {
+    position: absolute;
+    top: -12px;
+    font-size: 0.55rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    transform: translateX(-50%);
+}
+
+.rep-threshold.t2 { left: 12.5%; } /* 25/200 */
+.rep-threshold.t3 { left: 50%; }   /* 100/200 */
+
+.rep-tier-label {
+    font-size: 0.68rem;
+    color: var(--cyan-primary);
+}
+
+/* Level & XP */
+.xp-bar-frame {
+    height: 8px;
+    background: #090c13;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.xp-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #d97706 0%, #f59e0b 100%);
+    box-shadow: 0 0 6px var(--amber-glow);
+    transition: width 0.3s ease;
+}
+
+.certs-summary {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+}
+
+@@media (max-width: 900px) {
+    .stats-bar {
+        padding: 0.5rem 0.75rem;
+        gap: 0.75rem;
+    }
+    .stat-cluster {
+        min-width: 130px;
+    }
+}
+</style>
+
+@code {
+    [Parameter, EditorRequired]
+    public PlayerState Player { get; set; } = default!;
+
+    [Parameter]
+    public CompanyState? Company { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnThemeModeChanged { get; set; }
+
+    private async Task HandleThemeModeChanged(string theme)
+    {
+        if (OnThemeModeChanged.HasDelegate)
+        {
+            await OnThemeModeChanged.InvokeAsync(theme);
+        }
+    }
+
+    private string GetDayFullName(string dayCode) => dayCode switch
+    {
+        "MA" => "MAANANTAI",
+        "TI" => "TIISTAI",
+        "KE" => "KESKIVIIKKO",
+        "TO" => "TORSTAI",
+        "PE" => "PERJANTAI",
+        "LA" => "LAUANTAI",
+        "SU" => "SUNNUNTAI",
+        _ => dayCode
+    };
+
+    private string GetStaminaColorClass()
+    {
+        if (Player.Stamina > 50) return "text-success";
+        if (Player.Stamina > 20) return "text-warning";
+        return "text-danger";
+    }
+
+    private string GetStaminaBarClass()
+    {
+        if (Player.Stamina > 50) return "stamina-fill-high";
+        if (Player.Stamina > 20) return "stamina-fill-mid";
+        return "stamina-fill-low";
+    }
+
+    private string GetRepRank(int rep) => rep switch
+    {
+        >= 150 => "★ TEOLLISUUSMESTARI (Tier 3+)",
+        >= 100 => "★ SENIORIASENTAJA (Tier 3)",
+        >= 25 => "◆ AMMATTIASENTAJA (Tier 2)",
+        _ => "○ ALOITTELIA (Tier 1)"
+    };
+
+    private int GetRequiredXp(int level) => level switch
+    {
+        1 => 100,
+        2 => 250,
+        3 => 500,
+        4 => 1000,
+        _ => level * 300
+    };
+
+    private double GetXpPercentage()
+    {
+        var req = GetRequiredXp(Player.Level);
+        return Math.Clamp((double)Player.Xp / req * 100.0, 0, 100);
+    }
+}
