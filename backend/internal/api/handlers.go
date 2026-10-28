@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/vivaldev/clickertradergame/internal/engine"
@@ -17,9 +18,16 @@ func NewHandler(eng *engine.Engine) *Handler {
 	return &Handler{Engine: eng}
 }
 
-func (h *Handler) GetState(w http.ResponseWriter, r *http.Request) {
+// writeJSON encodes v as JSON and reports encoding failures.
+func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(h.Engine.GetState())
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("failed to encode response: %v", err)
+	}
+}
+
+func (h *Handler) GetState(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, h.Engine.GetState())
 }
 
 func (h *Handler) Click(w http.ResponseWriter, r *http.Request) {
@@ -29,8 +37,7 @@ func (h *Handler) Click(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"success": true,
 		"earned":  earned,
 		"state":   h.Engine.GetState(),
@@ -40,8 +47,7 @@ func (h *Handler) Click(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) AdvanceDay(w http.ResponseWriter, r *http.Request) {
 	gameOver, msg := h.Engine.AdvanceDay()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"success":  true,
 		"gameOver": gameOver,
 		"message":  msg,
@@ -64,8 +70,7 @@ func (h *Handler) RepayLoan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"success": true,
 		"paid":    paid,
 		"state":   h.Engine.GetState(),
@@ -88,8 +93,7 @@ func (h *Handler) CompleteMinigame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"success": true,
 		"result":  result,
 		"state":   h.Engine.GetState(),
