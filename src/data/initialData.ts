@@ -388,19 +388,12 @@ export const INITIAL_WEEK_SCHEDULE: Record<DayOfWeek, WeekSlot> = {
     type: 'gig',
     gigId: 'gig-club',
     title: 'Yökerho Bassoclub',
-    result: {
-      grade: 'perfect',
-      precision: 96.2,
-      payEarned: 240,
-      xpEarned: 65,
-      repDelta: 5,
-    },
   },
   TI: {
     day: 'TI',
     type: 'gig',
-    gigId: 'gig-club',
-    title: 'Yökerho Bassoclub (Viimeistely)',
+    gigId: 'gig-coffee',
+    title: 'Kahvila & Bistro Kulttikupla',
   },
   KE: {
     day: 'KE',
@@ -410,13 +403,13 @@ export const INITIAL_WEEK_SCHEDULE: Record<DayOfWeek, WeekSlot> = {
     day: 'TO',
     type: 'gig',
     gigId: 'gig-arcade',
-    title: 'Retro Arcadia Pelihalli',
+    title: 'Retro Arcadia Pelihalli (Osa 1/2)',
   },
   PE: {
     day: 'PE',
     type: 'gig',
     gigId: 'gig-arcade',
-    title: 'Retro Arcadia Pelihalli (Osa 2)',
+    title: 'Retro Arcadia Pelihalli (Osa 2/2)',
   },
   LA: {
     day: 'LA',

@@ -1,191 +1,102 @@
-# AGENT_MEMO.md — Arkkitehtuuri-, Konventio- ja Kontekstimuistio Seuraavalle Agentille
+# AGENT_MEMO.md — Architecture, Conventions & Context Guide for Subsequent Agents
 
-> **Kenelle tämä dokumentti on tarkoitettu?**  
-> Tämä muistio on kirjoitettu suoraan **sinulle (seuraavalle kehittäjäagentille)**. Kun konteksti tiivistyy (compaction) tai uusi kehityssessio alkaa, lue tämä tiedosto ensimmäisenä. Se tiivistää projektin **motiivit, arkkitehtuuripäätökset, React 19.2+ / TypeScript / Go -konventiot, pelisuunnittelun invariantit sekä käyttäjän odottaman mentorointityylin**.
-
----
-
-## 1. Projektin Identiteetti & Käyttäjän Motiivi ("Why We Are Building This")
-
-**Sovellus:** *From Gigs to Giants — Sähköäijä & Studio Tycoon*  
-**Ydinkonsepti:** Korkeiden panosten (High-Stakes) talous-, urakointi- ja pörssisimulaattori, jossa pelaaja aloittaa itsenäisenä sähkö- ja automaatioasentajana, tekee asiakaskeikkoja (60fps minipelit), ostaa pajan työkaluja ja sertifikaatteja, hankkii kokonaisen yrityksen **45 000 € pankkilainalla (perheen 180 000 € omakotitalo panttina)** ja sijoittaa varojaan raaka-aine- ja osakepörssiin (TradingView-tyylinen moniaikajännekaavio).
-
-### Käyttäjän profiili ja oppimistavoite (ERITTÄIN TÄRKEÄ!)
-- **Roolisi:** Toimit **kokeneena ohjelmistoarkkitehtina ja mentorina**, joka tukee kehittäjän ammatillista kasvua.
-- **Viestintätyyli:**
-  - Pidä sävy **rentona, ammattimaisena ja rohkaisevana** (selkeällä suomen kielellä).
-  - **Perustele aina arkkitehtuurivalinnat:** Älä vain lätkäise koodia, vaan selitä *miksi* tietty tietorakenne, tilakone, tyyppikuvio tai abstraktio on parempi kuin vaihtoehtoinen tapa (esim. vertaa TypeScriptin ja Gon idiomieroja, kun se on luontevaa).
-  - **Nosta reunaehdot (Edge Cases) esiin:** Älä oleta asioita hiljaisesti. Jos uudessa ominaisuudessa on tärkeitä reunaehtoja (kuten nollalla jakaminen, negatiivinen kassa, ääretön näpyttely-exploit tai asynkroninen kilpajuoksu), nosta ne lyhyesti esiin ja näytä, miten ne on taklattu koodissa.
-  - **Koodin laatu:** Kirjoita koodiesimerkit ja toteutukset aina vahvasti tyypitettyinä (ei `any`-tyyppejä) ja selkeästi suomeksi kommentoituina.
+> **Who is this document for?**  
+> This memo is written directly for **you (the next engineering agent)**. Whenever context compaction occurs or a new session starts, read this file first. It summarizes the project's **core motivation, architectural invariants, React 19.2+ / TypeScript / Go conventions, Git & PR standards, and the mentoring persona expected by the user**.
 
 ---
 
-## 2. Arkkitehtuuri & Kansiorakenne
+## 1. Project Identity & User Mentoring Persona
 
-Projekti on jaettu selkeästi vastuualueisiin (Separation of Concerns):
+**Application:** *From Gigs to Giants — Sähköäijä & Studio Tycoon*  
+**Core Concept:** A high-stakes financial, electrical contracting, and stock/commodity market simulator where the player starts as a solo electrical & automation technician, completes interactive 60fps jobsite minigames, upgrades workshop tools and certifications, acquires an electrical contracting company via a **45,000 € bank loan backed by the family's 180,000 € home as collateral**, and trades on a multi-timeframe OHLCV stock/commodity exchange.
+
+### User Profile & Language Boundary (CRITICAL!)
+- **Your Role:** Act as a **senior software architect and mentor** supporting the developer's professional growth.
+- **Strict Language Boundary:**
+  1. **Conversational / Mentoring Responses in Chat:** Respond in **Finnish** with a relaxed, professional, and encouraging tone.
+  2. **Everything Going into Code, Files, Docs, or Git:** **ALWAYS in English!** All source code comments, JSDoc blocks, unit test assertions, repository documentation (`README.md`, `PR_STORY.md`, `.github/*`, `AGENT_MEMO.md`), Git branch names, commit messages, and Pull Request descriptions MUST be written in clean, idiomatic English. (Only the in-game UI copy rendered to the player remains in Finnish.)
+- **Architectural Explanations:**
+  - Always explain *why* a specific data structure, state machine, type pattern, or abstraction is superior to alternatives (e.g., comparing TypeScript and Go idioms where natural).
+  - Explicitly call out **Edge Cases** (e.g., division by zero, negative cash, infinite farming exploits, clock overflow, or async race conditions) and demonstrate how guard clauses prevent them.
+
+---
+
+## 2. Repository Architecture & Directory Structure
 
 ```text
 /
-├── AGENT_MEMO.md                  # Tämä arkkitehti- ja agenttimuistio
-├── vite.config.ts                 # Vite + babel-plugin-react-compiler
-├── backend/                       # Go-taustamoottorin referenssi- ja simulaatiomallit
-│   └── internal/engine/           # Deterministinen talous-, velka- ja pörssilogiikka Gossa
+├── AGENT_MEMO.md                  # Architecture & convention memo (English)
+├── PR_STORY.md                    # Squash-and-Merge optimized PR description (English)
+├── Dockerfile                     # 3-stage Go + Node 22 + non-root production runtime
+├── .github/
+│   ├── workflows/ci-cd.yml        # GitHub Actions CI/CD (Go + Node + Buildx GHCR)
+│   └── PULL_REQUEST_TEMPLATE.md   # Squash-and-Merge PR template
+├── backend/                       # Go simulation backend reference & unit tests
+│   └── internal/engine/           # Deterministic financial, debt, and market logic in Go
 └── src/
-    ├── App.tsx                    # Juurikomponentti: <Activity>-välilehdet & useEffectEvent-ajastimet
+    ├── App.tsx                    # Root component: <Activity> tabs & useEffectEvent timers
     ├── hooks/
-    │   └── useEffectEvent.ts      # React 19.2+ useEffectEvent -toteutus ajastimille & RAF-silmukoille
+    │   └── useEffectEvent.ts      # React 19.2+ useEffectEvent hook for intervals & RAF loops
+    ├── utils/
+    │   └── circularBuffer.ts      # O(1) ring buffer (PriceHistoryBuffer)
     ├── types/
-    │   ├── game.ts                # Ydinmallit: PlayerState, LoanState, Employee, UpgradeItem, Gig, TransactionRecord
-    │   └── market.ts              # Pörssimallit: MarketTimeframe (1m..1d), OHLCCandle, MarketAsset, InsiderIntel
+    │   ├── game.ts                # Core domain types: PlayerState, LoanState, Gig, TransactionRecord
+    │   └── market.ts              # Market types: MarketTimeframe (1m..1d), OHLCCandle, MarketAsset
     ├── data/
-    │   ├── initialData.ts         # Aloitusdata: työkalut, sertifikaatit, keikat, laina, työntekijät
-    │   └── initialMarketData.ts   # Pörssin kohde-etuudet ja generoidut OHLC-historiakynttilät kaikille aikajänteille
+    │   ├── initialData.ts         # Initial catalog: tools, certifications, gigs, week schedule
+    │   └── initialMarketData.ts   # Exchange assets and pre-generated OHLC candle series
     ├── store/
-    │   ├── useGameStore.ts        # Zustandin yhdistetty store + calculateBusinessMetrics-selektori
-    │   └── slices/                # Modulaariset Zustand-viipaleet (Slice Pattern):
-    │       ├── playerSlice.ts     # Taso, XP, Stamina, getEffectiveStaminaCost, getStaminaEfficiencyBreakdown
-    │       ├── financialSlice.ts  # Kassa, IEEE 754 -pyöristys (2 desim.), TransactionRecord-loki (Ledger)
-    │       ├── loanSlice.ts       # 45 000 € yrityslaina, 180 000 € kodin pantti, viikkokorko, ulosottoriski
-    │       ├── companySlice.ts    # Yrityksen taso, työntekijöiden palkkaus/ylennys/irtisanominen
-    │       ├── assetSlice.ts      # Pajan päivitykset eksponentiaalisella kustannuskäyrällä (Base * 1.45^Level)
-    │       ├── marketSlice.ts     # Moniaikajänteinen OHLC-pörssimoottori, stepMarketCandle, osingot, sisäpiirivihjeet
-    │       └── leaderboardSlice.ts# Tulostaulut ja saavutukset
-    ├── services/
-    │   ├── soundService.ts        # Syntetisoitu Web Audio API -äänimoottori (ei ulkoisia äänitiedostoja)
-    │   ├── googleWorkspaceAuth.ts # 1P Google OAuth 2.0 (Token Client)
-    │   └── slidesExportService.ts # Google Slides Pitch Deck -raporttigeneraattori sijoittajille
+    │   ├── useGameStore.ts        # Combined Zustand store + calendar-synced gig engine
+    │   ├── __tests__/
+    │   │   └── financial.test.ts  # Deterministic unit test suite (store, ledger, calendar gigs)
+    │   └── slices/
+    │       ├── playerSlice.ts     # Level, XP, Stamina, getEffectiveStaminaCost, perks
+    │       ├── financialSlice.ts  # Cash, IEEE 754 2-decimal rounding, Ledger coalescing & daily settlement
+    │       ├── loanSlice.ts       # 45,000 € business loan, 180,000 € home collateral, foreclosure risk
+    │       ├── companySlice.ts    # Company tier, technician hiring/promotion/firing
+    │       ├── assetSlice.ts      # Workshop upgrades with exponential cost curve (Base * 1.45^Level)
+    │       ├── marketSlice.ts     # Multi-timeframe OHLC market engine, stepMarketCandle, dividends, intel
+    │       └── leaderboardSlice.ts# Leaderboards & achievements
     └── components/
-        ├── Header.tsx             # Yläpalkki: Kello, Kassa, Salkku, Stamina, Kodin velkariski, Seuraava päivä
-        ├── NavigationTabs.tsx     # Välilehtinavigaatio
-        ├── WorkstationView.tsx    # Työpiste, manuaalinen työ & minipelien käynnistys (switch-ohjattu)
-        ├── MarketView.tsx         # TradingView-tyylinen pörssinäkymä (OHLCV, SMA-20, EMA-9, aikajänteet alhaalla)
-        ├── CompanyLoanView.tsx    # Yrityskauppa, kodin pantti, lainanlyhennys & HR-hallinta
-        ├── UpgradesView.tsx       # Paja & Työkalut (suodatettu kategorioittain)
-        ├── GigMarketView.tsx      # Keikkapörssi
-        ├── CalendarView.tsx       # Viikkokalenteri (MA–SU)
+        ├── WorkstationView.tsx    # Calendar-synchronized daily gig execution & manual workshop labor
+        ├── GigMarketView.tsx      # Contract booking & unscheduling into weekSchedule
+        ├── WeekCalendarView.tsx   # Weekly schedule (MA–SU), end-of-day settlement & financial ledger
+        ├── MarketView.tsx         # TradingView-style OHLCV chart (SMA-20, EMA-9, timeframe bar)
+        ├── CompanyLoanView.tsx    # Company acquisition, home collateral risk, debt service & HR
         └── Minigames/             # TimingMinigame, WiringMinigame, TroubleshootingMinigame
 ```
 
 ---
 
-## 3. Tiukat Tekniset Konventiot (React 19.2+, React Compiler & TypeScript)
+## 3. Strict Technical Conventions (React 19.2+, React Compiler, TypeScript & Git)
 
-Käyttäjä haluaa, että koodipohja toimii **malliesimerkkinä modernista React 19.2+ ja React Compiler -arkkitehtuurista**. Noudata näitä sääntöjä poikkeuksetta:
+### 3.1. React Compiler (`babel-plugin-react-compiler`) & Pure Rendering
+1. **Automatic Memoization is Enabled (`vite.config.ts`):**
+   - Do not wrap trivial derived variables or event handlers in manual `useMemo` or `useCallback`.
+   - Keep component render functions **100% pure**: never mutate external state or call `Math.random()` / `Date.now()` directly inside JSX render paths.
+2. **Use `useActionState` for Business & Form Transitions:**
+   - Use React 19 `useActionState` for discrete business actions (`MarketView`, `CompanyLoanView`, `UpgradesView`) instead of manual `isLoading` + `error` state pairs.
+   - Use direct `useState` / `useRef` only for high-frequency micro-interactions (e.g., 60fps minigames or SVG candle hover).
+3. **`switch` + Discriminated Unions + Exhaustive Check (`never`):**
+   - Route finite state unions via `switch` with a `default: { const _exhaustiveCheck: never = x; return _exhaustiveCheck; }` branch for compile-time exhaustiveness.
+4. **Zero Cascading `useEffect` Chains:**
+   - Never use `useEffect` to synchronize internal state (`A -> B -> C`). Compute derived values during render and execute side effects directly inside event handlers or store actions.
+   - `useEffect` is only permitted for synchronizing with external browser systems (timers, `requestAnimationFrame`, DOM listeners) paired with `useEffectEvent` and deterministic cleanup.
 
-### 3.1. React Compiler (`babel-plugin-react-compiler`) & Memoizaatio
-1. **Automaattinen memoizaatio on päällä (`vite.config.ts`):**
-   - Älä kääri jokaista pientä muuttujaa tai tapahtumankäsittelijää manuaaliseen `useMemo`- tai `useCallback`-koukkuun.
-   - Pidä komponenttien renderöintilogiikka **puhtaana sivuvaikutuksista (Pure Render)**: älä koskaan mutatoi ulkoisia muuttujia tai kutsu `Math.random()` / `Date.now()` suoraan JSX-renderöinnin sisällä (tee satunnaisgenerointi vain tapahtumankäsittelijöissä tai Zustand-actioneissa!).
-2. **Milloin `useMemo` on edelleen sallittu?**
-   - Vain silloin, kun halutaan eksplisiittinen algoritminen lokerointi (esim. raskas graafin polkulaskenta tai taulukon monivaiheinen haku), mutta silloinkin puhdas paikallinen johdettu muuttuja (`const x = ...`) riittää React Compilerille.
-
-### 3.2. `useActionState` vs. suora `useState`
-1. **Käytä `useActionState`-koukkua liiketoiminta- ja lomaketoiminnoissa (`MarketView`, `CompanyLoanView`, `UpgradesView`):**
-   - Kun toiminnolla on selkeä syöte (`payload`), tilamuutos (esim. osto, myynti, lainanlyhennys, kynttilän kelaus tai asynkroninen Google Slides -vienti) ja palauteviesti (`status: 'idle' | 'success' | 'error'`, `message`), käytä React 19:n `useActionState`-koukkua.
-   - Älä luo erillisiä `const [isLoading, setIsLoading] = useState(false)` ja `const [error, setError] = useState(null)` -tilapareja.
-2. **Milloin `useActionState` EI kuulu komponenttiin?**
-   - Välittömissä, korkeataajuisissa mikrointeraktioissa (kuten `WiringMinigame.tsx`-johdotusvalinnassa, SVG-kynttilän `onMouseEnter`-hoverissa tai `TimingMinigame.tsx` 60fps-mittarissa). Niissä suora `useState` tai `useRef` on oikea työkalu, koska `useActionState` on suunniteltu *Action/Transition*-elinkaarelle.
-
-### 3.3. `switch` + Discriminated Unions + Exhaustive Check (`never`)
-Kun reitität tilakoneen toimintoja tai valitset renderöitävää alikomponenttia äärellisestä union-tyypistä (esim. `MinigameType` tai `MarketActionPayload`), **suosi aina `switch`-rakennetta ja `never`-tarkistusta** pitkien `if / else if` -ketjujen sijaan:
-
-```typescript
-switch (payload.action) {
-  case 'buy':
-    return handleBuy(payload);
-  case 'sell':
-    return handleSell(payload);
-  case 'step_candle':
-    return handleStepCandle(payload);
-  default: {
-    // Kääntäjä pakottaa päivittämään tämän kohdan, jos unioniin lisätään uusi jäsen!
-    const _exhaustiveCheck: never = payload;
-    return _exhaustiveCheck;
-  }
-}
-```
-*Arkkitehtuurinen perustelu:* Tämä vastaa Go-kielen vahvaa `switch`-idiomia ja antaa TypeScriptissä 100 % käännösaikaisen takuun siitä, ettei mikään uusi tila jää vahingossa käsittelemättä.
-
-### 3.4. Ehdottomasti Vältettävä Anti-Pattern: `useEffect`-sivuvaikutusketjut (Cascading Effects)
-
-Modernissa React 19.2+ ja React Compiler -arkkitehtuurissa **`useEffect` tilan synkronointiin tai tapahtumaketjujen ohjaamiseen on ehdoton anti-pattern**.
-
-#### Miksi `useEffect`-ketjut ovat niin vaarallisia ja vaikeita debugata?
-Kun `useEffect` asetetaan kuuntelemaan tilaa `A` ja päivittämään tilaa `B` (`setB(...)`), joka puolestaan laukaisee toisen `useEffect`-koukun päivittämään tilaa `C`:
-1. **Turhat renderöintisyklit ja välkkyminen (Render Waterfalls):** Käyttöliittymä renderöityy ensin vanhalla/epäyhtenäisellä tilalla ja vasta sen jälkeen efektien pakottamalla uudella tilalla.
-2. **Vanhentuneet sulkeumat (Stale Closures) & Ikuiset silmukat:** Yksikin puuttuva tai väärän viiteidentiteetin omaava riippuvuus `dependency array` -listassa aiheuttaa joko hiljaisen bugin (luetaan vanhaa arvoa) tai loputtoman `Maximum update depth exceeded` -kierteen.
-3. **Asynkroniset kilpajuoksut (Race Conditions):** Kun käyttäjä vaihtaa nopeasti esim. pörssin kohde-etuutta tai aikajännettä, päällekkäiset efektit ylikirjoittavat toistensa tuloksia arvaamattomassa järjestyksessä.
-
-#### Korvaavat mallit (Käytä aina näitä `useEffect`in sijaan):
-- **Johdettu tila (Derived State):** ÄLÄ KOSKAAN tee `useEffect(() => { setFiltered(items.filter(...)) }, [items])`. Laske arvo suoraan renderöinnin aikana (`const filtered = items.filter(...)`). React Compiler memoizoi sen automaattisesti!
-- **Käyttäjän toiminnasta johtuva sivuvaikutus:** Jos klikkaus tai lomakkeen lähetys muuttaa tilaa, soittaa äänen tai näyttää ilmoituksen, suorita logiikka **suoraan tapahtumankäsittelijässä (`onClick`) tai `useActionState`-funktiossa** — älä koskaan kierrätä sitä `useState`-lipun ja `useEffect`-kuuntelijan kautta.
-- **Tilan nollaus ID:n vaihtuessa:** Jos komponentin tila pitää nollata esim. keikan tai osakkeen vaihtuessa, anna komponentille `<Component key={selectedId} />` tai nollaa arvo suoraan valintafunktiossa (`handleSelect`).
-
-```typescript
-// ❌ ANTI-PATTERN: Sivuvaikutusketju (ÄLÄ TEE NÄIN!)
-useEffect(() => {
-  if (tradeSuccess) {
-    sound.playSuccess();
-    setNotification('Kauppa onnistui!');
-  }
-}, [tradeSuccess]);
-
-// ✅ OIKEA MALLI: Suora toiminto useActionState- tai tapahtumankäsittelijässä
-const [tradeState, executeTrade] = useActionState((_prev, payload) => {
-  const res = buyAsset(payload.assetId, payload.quantity);
-  if (res.success) sound.playSuccess(); // Sivuvaikutus tapahtuu täsmälleen tapahtumahetkellä
-  return { status: res.success ? 'success' : 'error', message: res.message };
-}, { status: 'idle', message: null });
-```
-
-#### Milloin `useEffect` ON sallittu ja perusteltu?
-`useEffect` on modernissakin Reactissa **täysin sallittu ja oikea työkalu VAIN silloin**, kun komponentti synkronoidaan **Reactin ulkopuolisen järjestelmän (External System)** kanssa, jolle ei ole tapahtumapohjaista vaihtoehtoa:
-1. Selaimen ajastimet (`setInterval` / `setTimeout`) ja pelisilmukat (`requestAnimationFrame`).
-2. DOM-tapahtumakuuntelijat (`window.addEventListener`), WebSocket-yhteydet tai Web Audio / Canvas -resurssien elinkaari.
-
-**Pakollinen tarkistuslista (Guardrails), kun käytät perusteltua `useEffect`-koukkua:**
-1. **Nolla dominoefektiä (Zero Domino Rule):** Yhdenkään `useEffect`in ei tule laukaista tilamuutosta, joka käynnistää toisen `useEffect`in.
-2. **Eristä reaktiivisuus `useEffectEvent`-koukulla:** Älä laita ajastimen tai animaatiosilmukan `dependency array` -listaan muuttuvia tiloja tai funktioita. Kääri tikin sisäinen logiikka `useEffectEvent`-funktioon (`src/hooks/useEffectEvent.ts`), jotta efekti käynnistyy vain, kun todellinen synkronointiparametri (esim. `intervalMs` tai `isRunning`) muuttuu.
-3. **Eksplisiittinen siivous (Cleanup):** Jokaisen `useEffect`-koukun on palautettava deterministinen siivousfunktio (`return () => clearInterval(id)` tai `cancelAnimationFrame(id)`), jotta muistivuotoja tai "haamuajastimia" ei synny.
-4. **Perustelukommentti koodiin:** Kirjoita jokaisen `useEffect`in yläpuolelle lyhyt arkkitehtuurikommentti, joka kertoo *mikä ulkoinen järjestelmä* tässä synkronoidaan ja miksi.
-
-### 3.5. `<Activity>` ja tilan säilytys
-- **`<Activity>` (`App.tsx`):** Päävälilehdet renderöidään `<Activity mode={activeTab === '...' ? 'visible' : 'hidden'}>` -komponentin sisällä, jotta käyttäjän paikallinen UI-tila (esim. pörssin valinnat ja syötteet) säilyy välilehteä vaihdettaessa ilman taustalla pyöriviä haamuefektejä.
+### 3.2. Git & Pull Request Workflow (Squash & Merge)
+- All code comments, commit messages, and PR stories (`PR_STORY.md`, `.github/PULL_REQUEST_TEMPLATE.md`) **must be written in English**.
+- Structure feature branches with clean, atomic Conventional Commits (`sec(...)`, `ci(...)`, `feat(...)`, `test(...)`), and maintain an up-to-date Squash-and-Merge summary in `PR_STORY.md` so the `main` branch history stays linear while preserving the full architectural rationale.
 
 ---
 
-## 4. Pelisuunnittelun & Talousmoottorin Invariantit ("Älä Riko Näitä!")
+## 4. Core Game Design & Financial Engine Invariants ("Do Not Break!")
 
-1. **Pörssikaavio ei saa pomppia sekunnin välein (TradingView Multi-Timeframe Bucketing):**
-   - Pörssissä on 7 aikajännettä: `1m`, `5m`, `10m`, `30min` (`30m`), `60min` (`60m`), `3h` ja `1d`.
-   - Tausta-ajastin (`App.tsx`) päivittää kynttilän valitun aikajänteen todellisen keston (`realTimeSeconds`) mukaisesti, ja keikat (`30m`) sekä päivänvaihdot (`1d`) sulkevat vastaavat kynttilät.
-   - **UI-sijoittelu:** Aikajännevalitsin (`Aikajänne: 1m 5m ...`) ja `+1 kynttilä` -painike sijaitsevat **suoraan SVG-kuvaajan alapuolella** (X-akselin yhteydessä), kun taas OHLCV-arvot ja indikaattorikytkimet (`SMA-20`, `EMA-9`, `Vol`) ovat tiiviissä yläpalkissa.
-2. **Stamina-portti estää äärettömän kynttiläkelauksen (`stepMarketCandle`):**
-   - Pelaaja EI saa pystyä kelaamaan `+1 kynttilä` -napilla aikaa ilmaiseksi loputtomiin ("Infinite Reroll Exploit").
-   - Jokainen manuaalinen kynttilän kelaus kuluttaa staminaa (`getEffectiveStaminaCost(tfMeta.baseStaminaCost)`), vie pelikelloa eteenpäin (`advanceMinute`) ja kerryttää hieman analyysi-XP:tä (`addXp`).
-   - Tehollinen staminakulutus kevenee hahmonkehityksen myötä kolmesta lähteestä:
-     1. **Kalusto & Sertifikaatit** (`UpgradeItem.staminaDrainReduction`)
-     2. **Ammattitaso** (`player.level`, -2 % per taso)
-     3. **Yrityksen tiimi** (`Employee.staminaEfficiency`, kun yritys on ostettu)
-   - Kokonaiskevennys on rajattu **max 75 prosenttiin** (`Math.min(0.75, ...)`), jotta toiminto ei koskaan muutu täysin ilmaiseksi.
-3. **Kirjanpidon tarkkuus (IEEE 754 & Ledger):**
-   - Älä koskaan muuta `cash`-arvoa suoraan komponentista tai epätarkalla liukulukulaskulla. Käytä aina `addCash`- ja `spendCash`-metodeja (`financialSlice.ts`), jotka pyöristävät sentit (`Math.round(val * 100) / 100`) ja kirjaavat `TransactionRecord`-rivin tilikirjaan.
-
-4. **Hahmonkehityksen erikoistumispuut (Perk Trees & Puhtaat Valitsimet):**
-   - Hahmonkehitys on eriytetty puhtaisiin valitsinfunktioihin (`hasPerk`, `canUnlockPerk`) ja katalogiin (`PERK_CATALOG` in `src/data/perksData.ts`).
-   - Tasonnousut kerryttävät taitopisteitä (`player.perkPoints`), joilla pelaaja voi aktivoida kykyjä kahdessa haarassa:
-     1. **Kenttämestari (Field Specialist):** `craftsman_flow` (+25 % manuaalityön tuotto, -20 % klikkausstamina), `precision_grip` (minipelien toleranssit, keikkojen staminakulutus 15 -> 11), `jobsite_innovator` (+50 % maine keikoista, 35 % mahdollisuus löytää ylijäämäkomponentteja +50–150 €).
-     2. **Pörssihai (Market Analyst):** `candle_focus` (kynttiläkelauksen staminakulu -40 %), `insider_network` (sisäpiirivihjeiden saantimahdollisuus 35 % -> 70 %, kynnys 70 %), `arbitrage_master` (+6 % lisätuotto pörssimyynneistä ilman spread-kuluja).
-   - Tilan nollaus (`respecPerks`) palauttaa kaikki sijoitetut taitopisteet deterministisesti ilman sivuvaikutusketjuja.
-
----
-
-## 5. Luonnolliset Jatkokehityssuunnat (Seuraavat Askeleet)
-
-Jos käyttäjä pyytää jatkamaan tai laajentamaan peliä, tässä ovat arkkitehtuurisesti seuraavat suunnat:
-1. **Vireystilan vaikutukset (Fatigue & Focus Buffs):**
-   - Korkea stamina (>80 %) voi antaa "Fokus-bonuksen" (parempi tarkkuus minipeleissä tai korkeampi sisäpiirivihjeen todennäköisyys), kun taas matala stamina (<20 %) kasvattaa virheriskiä tai kytkee hidastuksia.
-2. **Go-taustapalvelimen ja Frontendin syvempi synkronointi:**
-   - Projektissa on `backend/internal/engine`-kansiossa Go-kielinen talousmoottori. Sitä voidaan käyttää vertailukohtana, kun opetetaan käyttäjälle Go vs. TypeScript -suunnittelumalleja (esim. Goroutines / Concurrency, Struct tags, Error handling idiomi `if err != nil`).
-3. **Ura- ja yritystason laajennukset (Contract Tier Scaling):**
-   - Suuremmat alihankintasopimukset, joissa työntekijöiden taitoja ja pelaajan erikoistumisia yhdistetään monimutkaisiin sähköverkkourakointeihin.
+1. **Calendar-Synchronized Daily Gigs (`weekSchedule[dayOfWeek]` as Single Source of Truth):**
+   - Gigs can only be executed on the Workstation if they are scheduled in `weekSchedule[dayOfWeek]`.
+   - Each scheduled day slot can be executed **only once** (`slot.result` locks the day and sets `activeGig: null`; completed contracts are recorded in `completedGigIdsThisWeek`).
+   - Executing a gig consumes tier-scaled **Stamina** (`getGigResourceRequirements`: Tier 1 = 25%, Tier 2 = 35%, Tier 3 = 45% base) and advances the **Game Clock** (`4h` / `5h` / `6h`). Execution is blocked if stamina is insufficient or if the clock would exceed `22:00`.
+2. **Game-Clock Daily Settlement & Ledger Coalescing (`financialSlice.ts`):**
+   - The player starts as a solo entrepreneur (`0 €/day` passive income, `0` employees, `420.00 €` cash).
+   - Passive contract and technician revenues are settled once per day in `advanceDay()` (`processDailyPassiveIncome`), and same-day manual workshop clicks are coalesced into a single `click_labor` ledger row.
+3. **Multi-Timeframe Market & Stamina-Gated Candle Stepping (`marketSlice.ts`):**
+   - Manual `+1 candle` stepping consumes stamina (`getEffectiveStaminaCost`, capped at 75% max reduction) and advances the game clock to prevent infinite reroll exploits.

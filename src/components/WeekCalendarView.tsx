@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { sound } from '../services/soundService';
-import { TransactionRecord } from '../types/game';
+import { DayOfWeek, TransactionRecord } from '../types/game';
 import { INITIAL_WEEK_DAYS } from '../data/initialData';
-import { CheckCircle2, Coffee, ChevronRight, FileText } from 'lucide-react';
+import { CheckCircle2, Coffee, ChevronRight, FileText, X, Plus } from 'lucide-react';
 
 const CATEGORY_LABELS: Record<TransactionRecord['category'], string> = {
   click_labor: 'Verstastyö',
@@ -25,6 +25,7 @@ export const WeekCalendarView: React.FC = () => {
     transactions,
     getDailyPassiveBreakdown,
     hasCompanyBought,
+    unscheduleGigFromDay,
   } = useGameStore();
 
   const [dayBanner, setDayBanner] = useState<string | null>(null);
@@ -32,6 +33,12 @@ export const WeekCalendarView: React.FC = () => {
   const handleAdvance = () => {
     sound.playClick();
     const res = advanceDay();
+    setDayBanner(res.message);
+  };
+
+  const handleUnschedule = (day: DayOfWeek) => {
+    sound.playClick();
+    const res = unscheduleGigFromDay(day);
     setDayBanner(res.message);
   };
 
@@ -47,7 +54,7 @@ export const WeekCalendarView: React.FC = () => {
             Viikkokalenteri, päivätilitys ja tilikirja
           </h2>
           <p className="text-xs text-zinc-400 mt-1">
-            Viikko {week} · Sopimus- ja tiimituotot kirjataan tilikirjaan aina työpäivän päättyessä.
+            Viikko {week} · Työpisteellä voi suorittaa vain kuluvan päivän kalenteriin varatun keikan kerran päivässä.
           </p>
         </div>
 
@@ -82,7 +89,7 @@ export const WeekCalendarView: React.FC = () => {
           return (
             <div
               key={day}
-              className={`p-4 rounded-xl border flex flex-col justify-between min-h-[140px] transition-all ${
+              className={`p-4 rounded-xl border flex flex-col justify-between min-h-[155px] transition-all ${
                 isCurrent
                   ? 'border-amber-400 bg-zinc-900 ring-1 ring-amber-400/50'
                   : 'border-zinc-800 bg-zinc-900/40'
@@ -111,7 +118,7 @@ export const WeekCalendarView: React.FC = () => {
                       </span>
                       {slot.result && (
                         <div className="text-[11px] font-mono tabular-nums text-emerald-400">
-                          +{slot.result.payEarned} €
+                          +{slot.result.payEarned} € ✓
                         </div>
                       )}
                     </div>
@@ -121,18 +128,38 @@ export const WeekCalendarView: React.FC = () => {
                       <span>Lepo & palautuminen</span>
                     </div>
                   ) : (
-                    <span className="text-zinc-600 italic">Vapaa</span>
+                    <span className="text-zinc-600 italic">Vapaa arkipäivä</span>
                   )}
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 space-y-1">
                 {isCurrent && slot?.type === 'gig' && !slot.result && (
                   <button
                     onClick={() => setActiveTab('workstation')}
-                    className="w-full py-1 text-[11px] font-medium text-amber-400 hover:text-amber-300 text-left transition-colors"
+                    className="w-full py-1 text-[11px] font-semibold text-amber-400 hover:text-amber-300 text-left transition-colors"
                   >
                     Suorita työpisteellä →
+                  </button>
+                )}
+
+                {slot?.type === 'gig' && !slot.result && (
+                  <button
+                    onClick={() => handleUnschedule(day)}
+                    className="w-full py-1 text-[10px] font-medium text-zinc-500 hover:text-rose-400 flex items-center gap-1 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    <span>Vapauta varaus</span>
+                  </button>
+                )}
+
+                {slot?.type === 'empty' && (
+                  <button
+                    onClick={() => setActiveTab('gigs')}
+                    className="w-full py-1 text-[11px] font-medium text-zinc-400 hover:text-amber-400 flex items-center gap-1 transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Varaa keikka</span>
                   </button>
                 )}
               </div>

@@ -11,7 +11,7 @@ on:
       - main
   workflow_dispatch:
 
-# Estetään päällekkäiset ajot samassa haarassa/PR:ssä resurssien säästämiseksi
+# Cancel redundant in-progress runs on the same branch/PR to save runner minutes
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -20,13 +20,13 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
-# Oletuksena tiukka vähimmäisoikeusperiaate (Least Privilege)
+# Enforce Principle of Least Privilege by default
 permissions:
   contents: read
 
 jobs:
   # ============================================================================
-  # 1. GO BACKEND: Linting, Race-Condition Yksikkötestit & Binäärikäännös
+  # 1. GO BACKEND: Vet, Linting, Race-Detector Unit Tests & Binary Compilation
   # ============================================================================
   backend:
     name: Go Backend (Vet, Lint, Test & Build)
@@ -64,7 +64,7 @@ jobs:
         run: go build -v -o bin/server ./cmd/server/main.go
 
   # ============================================================================
-  # 2. FRONTEND & NODE: TypeScript, React Compiler, Yksikkötestit & Vite Build
+  # 2. FRONTEND & NODE: TypeScript, React Compiler, Unit Tests & Vite Build
   # ============================================================================
   frontend:
     name: Frontend & Node (Typecheck, Test & Build)
@@ -103,7 +103,7 @@ jobs:
         run: pnpm run build
 
   # ============================================================================
-  # 3. DOCKER BUILDX & GHCR: Monivaiheinen kontitus, GHA-välimuisti & Julkaisu
+  # 3. DOCKER BUILDX & GHCR: Multi-Stage Build, GHA Cache & Registry Publish
   # ============================================================================
   docker:
     name: Docker Buildx & Publish (GHCR)
@@ -150,8 +150,8 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          # Pull Requesteissa vain testataan kontin kääntyminen (push: false),
-          # main-haarassa ja tageissa julkaistaan kuva GHCR-rekisteriin (push: true).
+          # On pull requests, verify image build without pushing (push: false).
+          # On main branch merges and version tags, push to GHCR (push: true).
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
